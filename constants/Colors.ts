@@ -1,26 +1,45 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Colors used in the Kipri app with Material Design 3 inspired palette
  */
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+const primaryLight = '#6366F1';
+const primaryDark = '#818CF8';
+const tintColorLight = primaryLight;
+const tintColorDark = primaryDark;
 
 export const Colors = {
   light: {
     text: '#11181C',
-    background: '#fff',
+    background: '#FFFFFF',
+    surface: '#FFFFFF',
+    card: '#F8FAFC',
+    border: '#E2E8F0',
+    primary: primaryLight,
+    secondary: '#8B5CF6',
+    tertiary: '#10B981',
+    error: '#EF4444',
+    warning: '#F59E0B',
+    success: '#10B981',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: '#64748B',
+    tabIconDefault: '#64748B',
     tabIconSelected: tintColorLight,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#F1F5F9',
+    background: '#0F172A',
+    surface: '#1E293B',
+    card: '#334155',
+    border: '#475569',
+    primary: primaryDark,
+    secondary: '#A78BFA',
+    tertiary: '#34D399',
+    error: '#F87171',
+    warning: '#FBBF24',
+    success: '#34D399',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#94A3B8',
+    tabIconDefault: '#94A3B8',
     tabIconSelected: tintColorDark,
   },
 };
