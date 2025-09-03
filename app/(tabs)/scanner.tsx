@@ -1,25 +1,26 @@
-import React, { useState, useRef } from 'react';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
   ActivityIndicator,
   Alert,
   Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import * as ImagePicker from 'expo-image-picker';
-import { Image } from 'expo-image';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
-import { CATEGORIES, STORES, BACKEND_URL } from '../../constants/categories';
-import { AppMode } from '../../types';
+import { BACKEND_URL, CATEGORIES, STORES } from '../../constants/categories';
 import DataCacheService from '../../services/DataCacheService';
+import { AppMode } from '../../types';
 
 const ScannerScreen = () => {
   const insets = useSafeAreaInsets();
@@ -27,9 +28,12 @@ const ScannerScreen = () => {
   const colors = Colors[colorScheme ?? 'light'];
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const params = useLocalSearchParams();
 
-  const [showModeSelection, setShowModeSelection] = useState(true);
-  const [mode, setMode] = useState<AppMode>(AppMode.ADD);
+  const [showModeSelection, setShowModeSelection] = useState(!params.mode);
+  const [mode, setMode] = useState<AppMode>(
+    params.mode === 'update' ? AppMode.UPDATE : AppMode.ADD
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   
@@ -62,6 +66,21 @@ const ScannerScreen = () => {
   React.useEffect(() => {
     startAnimations();
   }, [startAnimations]);
+
+  // Pre-fill form when coming from navigation
+  useEffect(() => {
+    if (params.mode === 'update') {
+      setProductName(params.productName as string || '');
+      setSize(params.size as string || '');
+      setPrice(params.currentPrice as string || '');
+      setSelectedStore(params.store as string || '');
+      
+      const category = params.category as string;
+      if (category) {
+        setSelectedCategories([category.toLowerCase()]);
+      }
+    }
+  }, [params.mode, params.productName, params.size, params.currentPrice, params.store, params.category]);
 
   const selectMode = (selectedMode: AppMode) => {
     setMode(selectedMode);
@@ -382,9 +401,11 @@ const ScannerScreen = () => {
   const toggleCategory = (categoryName: string) => {
     setSelectedCategories(prev => {
       if (prev.includes(categoryName)) {
-        return prev.filter(cat => cat !== categoryName);
+        // If already selected, deselect it (single select)
+        return [];
       } else {
-        return [...prev, categoryName];
+        // Select this category and deselect all others (single select)
+        return [categoryName];
       }
     });
   };
@@ -465,7 +486,7 @@ const ScannerScreen = () => {
               <View style={styles.imagePlaceholder}>
                 <Text style={styles.cameraIcon}>📷</Text>
                 <Text style={[styles.imagePlaceholderText, { color: colors.text }]}>
-                  Tap to capture receipt
+                  Tap to capture price tag
                 </Text>
               </View>
             )}
@@ -554,13 +575,13 @@ const ScannerScreen = () => {
             </ScrollView>
           </View>
 
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, styles.categoriesInputGroup]}>
             <View style={styles.categoriesHeader}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>Categories</Text>
               <TouchableOpacity
                 style={[
                   styles.autoDetectButton,
-                  { 
+                  {
                     backgroundColor: isAutoDetecting ? colors.background : colors.primary,
                     opacity: isAutoDetecting ? 0.6 : 1
                   }
@@ -575,7 +596,7 @@ const ScannerScreen = () => {
                 )}
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.categoriesContainer}>
               {CATEGORIES.map((category) => (
                 <TouchableOpacity
@@ -707,6 +728,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   backButtonText: {
     color: 'white',
@@ -736,6 +762,11 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     marginBottom: 20,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
   },
   pickedImage: {
     width: '100%',
@@ -758,7 +789,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 8,
-    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
   },
   scanButtonText: {
     color: 'white',
@@ -773,6 +808,9 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 20,
   },
+  categoriesInputGroup: {
+    marginTop: 20,
+  },
   inputLabel: {
     fontSize: 16,
     fontWeight: 'bold',
@@ -784,6 +822,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     fontSize: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   storeSelector: {
     flexDirection: 'row',
@@ -794,6 +837,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     marginRight: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   storeChipText: {
     fontSize: 14,
@@ -808,6 +856,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+    marginTop: -20,
   },
   autoDetectButtonText: {
     color: 'white',
@@ -826,6 +880,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   categoryEmoji: {
     fontSize: 16,
@@ -842,6 +901,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderStyle: 'dashed',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   productImagePreview: {
     width: '100%',
@@ -863,8 +927,12 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
-    elevation: 2,
     marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
   },
   submitButtonText: {
     color: 'white',

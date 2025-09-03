@@ -1,26 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import { Colors } from '@/constants/Colors';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   ActivityIndicator,
-  RefreshControl,
-  Dimensions,
   Alert,
+  Dimensions,
   Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { FlatGrid } from 'react-native-super-grid';
-import { Image } from 'expo-image';
+import { CATEGORIES, BACKEND_URL } from '../../constants/categories';
 import DataCacheService from '../../services/DataCacheService';
 import { Product, Promotion } from '../../types';
-import { CATEGORIES } from '../../constants/categories';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { Colors } from '@/constants/Colors';
 
 const { width } = Dimensions.get('window');
 const cardWidth = (width - 48) / 3; // 3 columns with proper spacing
@@ -37,6 +40,9 @@ const PricesScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | Promotion | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [showUpdatePrice, setShowUpdatePrice] = useState(false);
+  const [newPrice, setNewPrice] = useState('');
+  const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
 
   const cacheService = DataCacheService.getInstance();
 
@@ -104,6 +110,7 @@ const PricesScreen = () => {
 
 
   const selectCategory = (categoryName: string | null) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (selectedCategory === categoryName) {
       setSelectedCategory(null);
     } else {
@@ -112,8 +119,112 @@ const PricesScreen = () => {
   };
 
   const showProductDetails = (product: Product | Promotion) => {
+    console.log('showProductDetails called with:', product);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedProduct(product);
+    setShowUpdatePrice(false);
+    setNewPrice('');
     setModalVisible(true);
+    console.log('Modal should be visible now');
+  };
+
+  const handleUpdatePrice = () => {
+    if (!selectedProduct || 'isPromotion' in selectedProduct) {
+      Alert.alert('Error', 'Cannot update price for promotions');
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowUpdatePrice(true);
+  };
+
+  const submitPriceUpdate = async () => {
+    if (!selectedProduct || 'isPromotion' in selectedProduct) {
+      return;
+    }
+
+    if (!newPrice.trim()) {
+      Alert.alert('Error', 'Please enter a new price');
+      return;
+    }
+
+    if (!isValidPrice(newPrice)) {
+      Alert.alert('Error', 'Invalid price format. Please enter a valid amount (e.g., "Rs 12.50" or "12,50")');
+      return;
+    }
+
+    const priceValue = getPriceValue(newPrice);
+    if (priceValue > 1000) {
+      Alert.alert('Error', 'Price exceeds Rs 1000 limit. Please verify the amount');
+      return;
+    }
+
+    setIsUpdatingPrice(true);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/update-product`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          product_name: selectedProduct.product,
+          size: selectedProduct.size,
+          price: newPrice.trim(),
+          store: selectedProduct.store,
+          categories: [selectedProduct.category],
+        }),
+      });
+
+      if (response.ok) {
+        await cacheService.invalidateProducts();
+        Alert.alert('Success', 'Product price updated successfully!');
+        setModalVisible(false);
+        setShowUpdatePrice(false);
+        setNewPrice('');
+        // Refresh the products list
+        fetchData();
+      } else {
+        const errorText = await response.text();
+        handleUpdateError(response.status, errorText);
+      }
+    } catch (error) {
+      console.error('Network error in update price:', error);
+      Alert.alert('Error', 'Network error. Please check your connection and try again.');
+    } finally {
+      setIsUpdatingPrice(false);
+    }
+  };
+
+  const handleUpdateError = (statusCode: number, responseBody: string) => {
+    const errorBody = responseBody.toLowerCase();
+    
+    switch (statusCode) {
+      case 400:
+        if (errorBody.includes('not found')) {
+          Alert.alert('Error', 'Product not found. Please try again.');
+        } else {
+          Alert.alert('Error', 'Invalid product data. Please check the price and try again.');
+        }
+        break;
+      case 404:
+        Alert.alert('Error', 'Product not found in the database.');
+        break;
+      default:
+        Alert.alert('Error', `Server error (${statusCode}). Please try again later.`);
+        break;
+    }
+  };
+
+  const isValidPrice = (priceText: string): boolean => {
+    if (!priceText) return false;
+    const cleanPrice = priceText.replace(/[Rs\.\s]/gi, '');
+    return /^[\d,]*$/.test(cleanPrice) && !cleanPrice.endsWith(',');
+  };
+
+  const getPriceValue = (priceText: string): number => {
+    const cleanPrice = priceText.replace(/[Rs\.\s]/gi, '').replace(',', '.');
+    return parseFloat(cleanPrice) || 0;
   };
 
   const formatPrice = (price: any): string => {
@@ -214,14 +325,14 @@ const PricesScreen = () => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: '#f3f1f5' }]}>
+    <LinearGradient
+      colors={['#f8f8f8', '#f4f4f4', '#f6f6f6']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       {/* Header */}
-      <LinearGradient
-        colors={[colors.primary + '20', colors.background + '10']}
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Kipri</Text>
-      </LinearGradient>
+      </View>
 
       {/* Categories Section */}
       <View style={styles.categoriesSection}>
@@ -282,7 +393,7 @@ const PricesScreen = () => {
           itemDimension={cardWidth}
           data={filteredItems}
           style={styles.productGrid}
-          spacing={8}
+          spacing={12}
           renderItem={renderProductCard}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           showsVerticalScrollIndicator={false}
@@ -294,7 +405,10 @@ const PricesScreen = () => {
         animationType="slide"
         transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+          console.log('Modal close requested');
+          setModalVisible(false);
+        }}
       >
         <View style={styles.modalOverlay}>
           <BlurView intensity={80} style={styles.modalBlur}>
@@ -303,7 +417,10 @@ const PricesScreen = () => {
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Product Details</Text>
                 <TouchableOpacity
                   style={[styles.closeButton, { backgroundColor: colors.background }]}
-                  onPress={() => setModalVisible(false)}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setModalVisible(false);
+                  }}
                 >
                   <Text style={styles.closeButtonText}>✕</Text>
                 </TouchableOpacity>
@@ -311,6 +428,7 @@ const PricesScreen = () => {
 
               {selectedProduct && (
                 <ScrollView style={styles.modalBody}>
+                  <Text style={{ color: 'red', fontSize: 18 }}>DEBUG: Modal is working!</Text>
                   {!('isPromotion' in selectedProduct) && (
                     <View style={styles.modalImageContainer}>
                       <ProductImage productId={selectedProduct.id} size={200} />
@@ -353,13 +471,96 @@ const PricesScreen = () => {
                       />
                     )}
                   </View>
+
+                  {/* Update Price Section - Only for regular products, not promotions */}
+                  {!('isPromotion' in selectedProduct) && (
+                    <>
+                      {!showUpdatePrice ? (
+                        <TouchableOpacity
+                          style={[styles.updatePriceButton, { backgroundColor: colors.primary }]}
+                          onPress={handleUpdatePrice}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.updatePriceIconContainer, { backgroundColor: colors.background }]}>
+                            <Text style={styles.updatePriceIcon}>💰</Text>
+                          </View>
+                          <View style={styles.updatePriceTextContainer}>
+                            <Text style={styles.updatePriceTitle}>Update Product Price</Text>
+                            <Text style={styles.updatePriceSubtitle}>Enter a new price for this product</Text>
+                          </View>
+                          <Text style={styles.updatePriceArrow}>→</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.updatePriceForm, { backgroundColor: colors.background }]}>
+                          <Text style={[styles.updatePriceFormTitle, { color: colors.text }]}>Update Price</Text>
+                          
+                          <View style={[styles.currentPriceDisplay, { backgroundColor: colors.card }]}>
+                            <Text style={[styles.currentPriceLabel, { color: colors.text }]}>Current Price</Text>
+                            <Text style={[styles.currentPriceValue, { color: colors.primary }]}>
+                              Rs {formatPrice(selectedProduct.price)}
+                            </Text>
+                          </View>
+
+                          <View style={styles.newPriceInputContainer}>
+                            <Text style={[styles.newPriceLabel, { color: colors.text }]}>New Price</Text>
+                            <TextInput
+                              style={[
+                                styles.newPriceInput,
+                                { 
+                                  backgroundColor: colors.card,
+                                  color: colors.text,
+                                  borderColor: colors.border
+                                }
+                              ]}
+                              value={newPrice}
+                              onChangeText={setNewPrice}
+                              placeholder="Rs 12.50 or 12,50"
+                              placeholderTextColor={colors.text + '60'}
+                              keyboardType="numeric"
+                              returnKeyType="done"
+                            />
+                          </View>
+
+                          <View style={styles.updatePriceActions}>
+                            <TouchableOpacity
+                              style={[styles.cancelUpdateButton, { backgroundColor: colors.card }]}
+                              onPress={() => {
+                                setShowUpdatePrice(false);
+                                setNewPrice('');
+                              }}
+                            >
+                              <Text style={[styles.cancelUpdateText, { color: colors.text }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            
+                            <TouchableOpacity
+                              style={[
+                                styles.submitUpdateButton,
+                                { 
+                                  backgroundColor: isUpdatingPrice ? colors.background : colors.primary,
+                                  opacity: isUpdatingPrice ? 0.6 : 1
+                                }
+                              ]}
+                              onPress={submitPriceUpdate}
+                              disabled={isUpdatingPrice}
+                            >
+                              {isUpdatingPrice ? (
+                                <ActivityIndicator color="white" size="small" />
+                              ) : (
+                                <Text style={styles.submitUpdateText}>Update Price</Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                    </>
+                  )}
                 </ScrollView>
               )}
             </View>
           </BlurView>
         </View>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -403,7 +604,7 @@ const ProductImage: React.FC<{ productId: string; size?: number }> = ({ productI
   return (
     <Image
       source={{ uri: imageUrl }}
-      style={[styles.productImage, { width: size, height: size }]}
+      style={[styles.productImage, { width: size, height: size * 0.8 }]}
       contentFit="cover"
     />
   );
@@ -440,18 +641,21 @@ const styles = StyleSheet.create({
   },
   categoriesSection: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   categoriesTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   categoriesScroll: {
-    maxHeight: 70,
+    maxHeight: 76,
+    paddingVertical: 4,
   },
   categoriesContent: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
   categoryButton: {
     width: 60,
@@ -461,6 +665,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 4,
     borderWidth: 1.5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 3,
+    marginVertical: 2,
   },
   categoryEmoji: {
     fontSize: 24,
@@ -472,7 +682,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     borderWidth: 1,
-    marginTop: 16,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
   },
   statusText: {
     fontSize: 14,
@@ -482,6 +697,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
   countText: {
     color: 'white',
@@ -525,21 +745,24 @@ const styles = StyleSheet.create({
   },
   productGrid: {
     flex: 1,
-    paddingLeft: 4,
-    paddingRight: 16,
+    paddingLeft: 1,
+    paddingRight: 20,
+    paddingTop: 2,
+    paddingBottom: 20,
   },
   productCard: {
     height: 150,
     borderRadius: 12,
-    elevation: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
     overflow: 'hidden',
+    marginVertical: 4,
   },
   cardImageContainer: {
-    flex: 3,
+    flex: 2.3,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -601,6 +824,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 8,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1,
+    elevation: 1,
   },
   promotionStore: {
     fontSize: 10,
@@ -608,7 +836,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   cardContent: {
-    flex: 2,
+    flex: 1,
     padding: 4,
     alignItems: 'center',
     justifyContent: 'center',
@@ -618,20 +846,25 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
     marginBottom: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
   },
   priceText: {
     color: 'white',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   storeText: {
-    fontSize: 8,
+    fontSize: 10,
     fontWeight: '500',
     textAlign: 'center',
     marginBottom: 1,
   },
   sizeText: {
-    fontSize: 7,
+    fontSize: 9,
     opacity: 0.7,
     textAlign: 'center',
   },
@@ -651,6 +884,11 @@ const styles = StyleSheet.create({
     maxHeight: '80%',
     borderRadius: 20,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -668,6 +906,11 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   closeButtonText: {
     fontSize: 16,
@@ -692,6 +935,11 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   priceTextModal: {
     fontSize: 20,
@@ -705,6 +953,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   detailIconContainer: {
     width: 32,
@@ -713,6 +966,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 1,
+    elevation: 1,
   },
   detailRowIcon: {
     fontSize: 16,
@@ -727,6 +985,145 @@ const styles = StyleSheet.create({
   detailRowValue: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  updatePriceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  updatePriceIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  updatePriceIcon: {
+    fontSize: 20,
+  },
+  updatePriceTextContainer: {
+    flex: 1,
+  },
+  updatePriceTitle: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  updatePriceSubtitle: {
+    color: 'white',
+    fontSize: 12,
+    opacity: 0.9,
+  },
+  updatePriceArrow: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  updatePriceForm: {
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  updatePriceFormTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  currentPriceDisplay: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  currentPriceLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  currentPriceValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  newPriceInputContainer: {
+    marginBottom: 16,
+  },
+  newPriceLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  newPriceInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  updatePriceActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelUpdateButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  cancelUpdateText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  submitUpdateButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  submitUpdateText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
