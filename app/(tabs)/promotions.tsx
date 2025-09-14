@@ -8,6 +8,8 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+    Platform,
+    Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -25,6 +27,14 @@ const PromotionsScreen = () => {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+
+  // Helper function to convert hex to rgba
+  const hexToRgba = (hex: string, opacity: number) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -221,21 +231,26 @@ const PromotionsScreen = () => {
                   }
                 ]}
               >
-                <TouchableOpacity
-                  style={[
-                    styles.storeButton,
-                    {
-                      backgroundColor: store.color + '20',
-                      borderColor: store.color + '50',
-                    }
-                  ]}
+                <Pressable
                   onPress={() => selectStore(store.name)}
-                  activeOpacity={0.8}
+                  android_ripple={null}
                 >
-                  <View style={styles.storeButtonContent}>
+                  <View style={[
+                    styles.newStoreButton,
+                    {
+                      backgroundColor: hexToRgba(store.color, 0.12),
+                      ...(Platform.OS === 'android' && {
+                        borderWidth: 0,
+                        borderColor: 'transparent',
+                        needsOffscreenAlphaCompositing: false,
+                        overflow: 'visible',
+                        elevation: 0,
+                      })
+                    }
+                  ]}>
                     <View style={[
-                      styles.storeIconContainer,
-                      { backgroundColor: store.color + '30' }
+                      styles.newStoreIconContainer,
+                      { backgroundColor: hexToRgba(store.color, 0.18) }
                     ]}>
                       <Text style={styles.storeIcon}>{store.icon}</Text>
                     </View>
@@ -243,7 +258,7 @@ const PromotionsScreen = () => {
                       {store.name}
                     </Text>
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               </Animated.View>
             ))}
           </View>
@@ -280,27 +295,35 @@ const PromotionsScreen = () => {
         contentContainerStyle={styles.categoriesContent}
       >
         {categories.map((category) => (
-          <TouchableOpacity
+          <Pressable
             key={category}
-            style={[
-              styles.categoryChip,
+            onPress={() => setSelectedCategory(category)}
+            android_ripple={null}
+          >
+            <View style={[
+              styles.newCategoryChip,
               {
                 backgroundColor: selectedCategory === category ? '#6366F1' : colors.card,
-                borderColor: selectedCategory === category ? '#6366F1' : colors.border,
-              }
-            ]}
-            onPress={() => setSelectedCategory(category)}
-          >
-            <Text style={[
-              styles.categoryChipText,
-              {
-                color: selectedCategory === category ? '#ffffff' : colors.text,
-                fontWeight: selectedCategory === category ? '600' : '500'
+                ...(Platform.OS === 'android' && {
+                  borderWidth: 0,
+                  borderColor: 'transparent',
+                  needsOffscreenAlphaCompositing: false,
+                  overflow: 'visible',
+                  elevation: selectedCategory === category ? 0 : 0,
+                })
               }
             ]}>
-              {category}
-            </Text>
-          </TouchableOpacity>
+              <Text style={[
+                styles.categoryChipText,
+                {
+                  color: selectedCategory === category ? '#ffffff' : colors.text,
+                  fontWeight: selectedCategory === category ? '600' : '500'
+                }
+              ]}>
+                {category}
+              </Text>
+            </View>
+          </Pressable>
         ))}
       </ScrollView>
 
@@ -472,6 +495,43 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+  newStoreButton: {
+    height: 80,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: Platform.OS === 'android' ? 0 : 4,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    ...(Platform.OS === 'android' && {
+      needsOffscreenAlphaCompositing: false,
+      renderToHardwareTextureAndroid: false,
+    })
+  },
+  newStoreIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: Platform.OS === 'android' ? 0 : 2,
+    overflow: 'hidden',
+    ...(Platform.OS === 'android' && {
+      borderWidth: 0,
+      borderColor: 'transparent',
+    })
+  },
   storeButtonContent: {
     flex: 1,
     flexDirection: 'row',
@@ -482,7 +542,7 @@ const styles = StyleSheet.create({
   storeIconContainer: {
     width: 50,
     height: 50,
-    borderRadius: 25,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
@@ -490,7 +550,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
-    elevation: 2,
+    elevation: Platform.OS === 'android' ? 0 : 2,
+    overflow: 'hidden',
+    ...(Platform.OS === 'android' && {
+      borderWidth: 0,
+      borderColor: 'transparent',
+    })
   },
   storeIcon: {
     fontSize: 24,
@@ -550,12 +615,28 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 12,
-    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+  },
+  newCategoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: Platform.OS === 'android' ? 0 : 2,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    ...(Platform.OS === 'android' && {
+      needsOffscreenAlphaCompositing: false,
+      renderToHardwareTextureAndroid: false,
+    })
   },
   categoryChipText: {
     fontSize: 14,
@@ -651,8 +732,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 25,
-    borderWidth: 2,
-    borderColor: '#6366F1',
     shadowColor: '#6366F1',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -697,8 +776,6 @@ const styles = StyleSheet.create({
   detailsSection: {
     padding: 16,
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb20',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,

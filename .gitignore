@@ -38,3 +38,19 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+Backend_Integration.md
+OCR_FIX_COMPLETE.md
+QUICK_START.md
+README.md
+reset-project.js
+tsconfig.json
+
+# Quick Start
+QUICK_START.md
+
+# Backend Integration
+BACKEND_INTEGRATION.md
+
+# OCR Fix Complete
+OCR_FIX_COMPLETE.md

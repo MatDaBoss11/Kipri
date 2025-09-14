@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,7 +38,6 @@ const ScannerScreen = () => {
     params.mode === 'update' ? AppMode.UPDATE : AppMode.ADD
   );
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   
   // Form states
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
@@ -172,14 +172,89 @@ const ScannerScreen = () => {
           console.log('✅ Auto-filled size:', product.size);
         }
         
-        // Reset store and categories since backend doesn't provide them - user must select
+        // Reset store first
         setSelectedStore('');
         setSelectedCategories([]);
-        
-        Alert.alert(
-          'Success', 
-          '🎯 Price tag scanned successfully! Product details have been auto-filled. Please select a store and category before submitting.'
-        );
+
+        // Automatically detect category if we have a product name
+        if (product.product_name && product.product_name.trim()) {
+          console.log('Auto-detecting category for:', product.product_name);
+
+          try {
+            // Use the integrated backend service for category detection
+            const categoryResult = await KipriBackendService.processText(product.product_name.trim());
+
+            if (categoryResult.success && categoryResult.categoryResult.isFood) {
+              const detectedCategory = categoryResult.categoryResult.category;
+
+              // Map the AI category to our local categories
+              const categoryMatch = CATEGORIES.find(cat =>
+                cat.displayName.toLowerCase() === detectedCategory.toLowerCase() ||
+                cat.name.toLowerCase() === detectedCategory.toLowerCase()
+              );
+
+              if (categoryMatch) {
+                setSelectedCategories([categoryMatch.name]);
+                const confidence = Math.round(categoryResult.categoryResult.confidence * 100);
+                console.log(`✅ Auto-detected category: ${categoryMatch.displayName} (${confidence}% confidence)`);
+
+                Alert.alert(
+                  'Success',
+                  `🎯 Scan complete! Auto-detected category: ${categoryMatch.displayName} (${confidence}% confidence). Please select a store before submitting.`
+                );
+              } else {
+                // If no exact match, try to find a similar category
+                let bestMatch = 'miscellaneous';
+                const categoryLower = detectedCategory.toLowerCase();
+
+                // Simple mapping for common categories
+                if (categoryLower.includes('meat') || categoryLower.includes('chicken') || categoryLower.includes('fish')) {
+                  bestMatch = 'meat';
+                } else if (categoryLower.includes('dairy') || categoryLower.includes('milk') || categoryLower.includes('cheese')) {
+                  bestMatch = 'dairy';
+                } else if (categoryLower.includes('vegetable')) {
+                  bestMatch = 'vegetables';
+                } else if (categoryLower.includes('fruit')) {
+                  bestMatch = 'fruits';
+                } else if (categoryLower.includes('bread') || categoryLower.includes('bakery')) {
+                  bestMatch = 'bread';
+                }
+
+                const fallbackCategory = CATEGORIES.find(cat => cat.name === bestMatch);
+                if (fallbackCategory) {
+                  setSelectedCategories([fallbackCategory.name]);
+                  console.log(`✅ Mapped to category: ${fallbackCategory.displayName}`);
+
+                  Alert.alert(
+                    'Success',
+                    `🎯 Scan complete! Detected similar category: ${fallbackCategory.displayName}. Please review and select a store before submitting.`
+                  );
+                } else {
+                  Alert.alert(
+                    'Success',
+                    '🎯 Scan complete! Product details extracted. Please manually select a category and store before submitting.'
+                  );
+                }
+              }
+            } else {
+              Alert.alert(
+                'Success',
+                '🎯 Scan complete! Product details extracted. Could not auto-detect category - please select manually along with a store.'
+              );
+            }
+          } catch (categoryError) {
+            console.error('Category detection failed:', categoryError);
+            Alert.alert(
+              'Success',
+              '🎯 Scan complete! Product details extracted. Category auto-detection failed - please select manually along with a store.'
+            );
+          }
+        } else {
+          Alert.alert(
+            'Success',
+            '🎯 Scan complete! Some details extracted. Please review and select a category and store before submitting.'
+          );
+        }
       } else {
         Alert.alert('Info', '🔍 No clear product information found in the image. Please check the image quality and try again, or enter details manually.');
         
@@ -196,70 +271,6 @@ const ScannerScreen = () => {
     }
   };
 
-  const handleAutoDetect = async () => {
-    if (!productName.trim()) {
-      Alert.alert('Error', '✏️ Please enter a product name first to auto-detect its category.');
-      return;
-    }
-
-    setIsAutoDetecting(true);
-
-    try {
-      console.log('Auto-detecting category with integrated backend...');
-      
-      // Use the integrated backend service - no server needed!
-      const result = await KipriBackendService.processText(productName.trim());
-      
-      if (result.success && result.categoryResult.isFood) {
-        const detectedCategory = result.categoryResult.category;
-        
-        // Map the AI category to our local categories
-        const categoryMatch = CATEGORIES.find(cat => 
-          cat.displayName.toLowerCase() === detectedCategory.toLowerCase() ||
-          cat.name.toLowerCase() === detectedCategory.toLowerCase()
-        );
-        
-        if (categoryMatch) {
-          setSelectedCategories([categoryMatch.name]);
-          const confidence = Math.round(result.categoryResult.confidence * 100);
-          Alert.alert('Success', `🎯 Auto-detected category: ${categoryMatch.displayName} (${confidence}% confidence)`);
-        } else {
-          // If no exact match, try to find a similar category
-          let bestMatch = 'miscellaneous';
-          const categoryLower = detectedCategory.toLowerCase();
-          
-          // Simple mapping for common categories
-          if (categoryLower.includes('meat') || categoryLower.includes('chicken') || categoryLower.includes('fish')) {
-            bestMatch = 'meat';
-          } else if (categoryLower.includes('dairy') || categoryLower.includes('milk') || categoryLower.includes('cheese')) {
-            bestMatch = 'dairy';
-          } else if (categoryLower.includes('vegetable')) {
-            bestMatch = 'vegetables';
-          } else if (categoryLower.includes('fruit')) {
-            bestMatch = 'fruits';
-          } else if (categoryLower.includes('snack') || categoryLower.includes('candy')) {
-            bestMatch = 'snacks';
-          } else if (categoryLower.includes('beverage') || categoryLower.includes('drink')) {
-            bestMatch = 'beverages';
-          } else if (categoryLower.includes('bakery') || categoryLower.includes('bread')) {
-            bestMatch = 'bakery';
-          }
-          
-          setSelectedCategories([bestMatch]);
-          Alert.alert('Notice', `🤔 Detected "${detectedCategory}" → mapped to "${bestMatch}". You can change if needed.`);
-        }
-      } else {
-        setSelectedCategories(['miscellaneous']);
-        Alert.alert('Notice', '🤷‍♂️ Could not determine food category. Set to miscellaneous.');
-      }
-    } catch (error: any) {
-      console.error('Error auto-detecting category:', error);
-      setSelectedCategories(['miscellaneous']);
-      Alert.alert('Notice', '⚠️ Auto-detect service unavailable. Category set to miscellaneous.');
-    } finally {
-      setIsAutoDetecting(false);
-    }
-  };
 
   const validateAndSubmit = async () => {
     // Validation
@@ -567,7 +578,7 @@ const ScannerScreen = () => {
             {isProcessing ? (
               <ActivityIndicator color="white" size="small" />
             ) : (
-              <Text style={styles.scanButtonText}>SCAN</Text>
+              <Text style={styles.scanButtonText}>SCAN & DETECT</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -639,23 +650,6 @@ const ScannerScreen = () => {
           <View style={[styles.inputGroup, styles.categoriesInputGroup]}>
             <View style={styles.categoriesHeader}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>Categories</Text>
-              <TouchableOpacity
-                style={[
-                  styles.autoDetectButton,
-                  {
-                    backgroundColor: isAutoDetecting ? colors.background : colors.primary,
-                    opacity: isAutoDetecting ? 0.6 : 1
-                  }
-                ]}
-                onPress={handleAutoDetect}
-                disabled={isAutoDetecting}
-              >
-                {isAutoDetecting ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
-                  <Text style={styles.autoDetectButtonText}>Auto-Detect</Text>
-                )}
-              </TouchableOpacity>
             </View>
 
             <View style={styles.categoriesContainer}>
@@ -818,16 +812,20 @@ const styles = StyleSheet.create({
   imagePickerContainer: {
     width: 120,
     height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
-    borderStyle: 'dashed',
+    borderRadius: 120,
+    borderWidth: Platform.OS === 'android' ? 0 : 3,
+    borderColor: 'transparent',
+    borderStyle: Platform.OS === 'android' ? 'solid' : 'dashed',
     marginBottom: 20,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
-    elevation: 4,
+    elevation: Platform.OS === 'android' ? 0 : 4,
+    ...(Platform.OS === 'android' && {
+      needsOffscreenAlphaCompositing: false,
+    }),
   },
   pickedImage: {
     width: '100%',
@@ -912,22 +910,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  autoDetectButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    marginTop: -20,
-  },
-  autoDetectButtonText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   categoriesContainer: {
     flexDirection: 'row',

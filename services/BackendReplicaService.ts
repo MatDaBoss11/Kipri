@@ -1,5 +1,5 @@
-import * as FileSystem from 'expo-file-system';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // Types matching the backend's ProductData model
 export interface ProductData {
@@ -56,7 +56,7 @@ class BackendReplicaService {
     try {
       // Read image as base64 (matching backend's image_bytes handling)
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       console.log('📸 Image encoded to base64, length:', base64.length);
