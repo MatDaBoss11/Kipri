@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 
 import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
@@ -40,21 +40,11 @@ export default function TabLayout() {
         options={{
           title: 'Promotions',
           tabBarIcon: ({ color, focused }) => (
-            <View style={{
-              backgroundColor: focused ? '#6366F1' : 'transparent',
-              borderRadius: 25,
-              paddingHorizontal: focused ? 12 : 8,
-              paddingVertical: 6,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <IconSymbol
-                size={20}
-                name="tag.fill"
-                color={focused ? '#ffffff' : color}
-              />
-            </View>
+            <IconSymbol
+              size={24}
+              name="tag.fill"
+              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+            />
           ),
           tabBarLabelStyle: {
             fontSize: 12,
@@ -67,21 +57,11 @@ export default function TabLayout() {
         options={{
           title: 'Prices',
           tabBarIcon: ({ color, focused }) => (
-            <View style={{
-              backgroundColor: focused ? '#6366F1' : 'transparent',
-              borderRadius: 25,
-              paddingHorizontal: focused ? 12 : 8,
-              paddingVertical: 6,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <IconSymbol
-                size={20}
-                name="bag.fill"
-                color={focused ? '#ffffff' : color}
-              />
-            </View>
+            <IconSymbol
+              size={24}
+              name="bag.fill"
+              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+            />
           ),
           tabBarLabelStyle: {
             fontSize: 12,
@@ -94,21 +74,11 @@ export default function TabLayout() {
         options={{
           title: 'Scanner',
           tabBarIcon: ({ color, focused }) => (
-            <View style={{
-              backgroundColor: focused ? '#6366F1' : 'transparent',
-              borderRadius: 25,
-              paddingHorizontal: focused ? 12 : 8,
-              paddingVertical: 6,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <IconSymbol
-                size={20}
-                name="qrcode"
-                color={focused ? '#ffffff' : color}
-              />
-            </View>
+            <IconSymbol
+              size={24}
+              name="qrcode"
+              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+            />
           ),
           tabBarLabelStyle: {
             fontSize: 12,
