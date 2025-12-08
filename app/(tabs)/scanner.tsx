@@ -89,53 +89,127 @@ const ScannerScreen = () => {
     setShowModeSelection(false);
   };
 
-  // Update pickReceiptImage to use the camera
+  // Update pickReceiptImage to allow both camera and gallery selection
   const pickReceiptImage = async () => {
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to capture images.');
-        return;
-      }
+      // On emulator or if user prefers, show options for camera or gallery
+      Alert.alert(
+        'Select Image Source',
+        'Choose where to pick your image from:',
+        [
+          {
+            text: 'Camera',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Camera permission is required to capture images.');
+                return;
+              }
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-      });
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.85,
+              });
 
-      if (!result.canceled && result.assets[0]) {
-        setReceiptImage(result.assets[0].uri);
-      }
+              if (!result.canceled && result.assets[0]) {
+                setReceiptImage(result.assets[0].uri);
+              }
+            }
+          },
+          {
+            text: 'Photo Library',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Gallery permission is required to select images.');
+                return;
+              }
+
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.85,
+              });
+
+              if (!result.canceled && result.assets[0]) {
+                setReceiptImage(result.assets[0].uri);
+              }
+            }
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
     } catch (error) {
-      console.error('Error capturing receipt image:', error);
-      Alert.alert('Error', 'Failed to capture image. Please try again.');
+      console.error('Error selecting receipt image:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
 
-  // Update pickProductImage to use the camera
+  // Update pickProductImage to allow both camera and gallery selection
   const pickProductImage = async () => {
     try {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to capture images.');
-        return;
-      }
+      // On emulator or if user prefers, show options for camera or gallery
+      Alert.alert(
+        'Select Image Source',
+        'Choose where to pick your image from:',
+        [
+          {
+            text: 'Camera',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Camera permission is required to capture images.');
+                return;
+              }
 
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.85,
-      });
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.85,
+              });
 
-      if (!result.canceled && result.assets[0]) {
-        setProductImage(result.assets[0].uri);
-      }
+              if (!result.canceled && result.assets[0]) {
+                setProductImage(result.assets[0].uri);
+              }
+            }
+          },
+          {
+            text: 'Photo Library',
+            onPress: async () => {
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Permission needed', 'Gallery permission is required to select images.');
+                return;
+              }
+
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.85,
+              });
+
+              if (!result.canceled && result.assets[0]) {
+                setProductImage(result.assets[0].uri);
+              }
+            }
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          }
+        ]
+      );
     } catch (error) {
-      console.error('Error capturing product image:', error);
-      Alert.alert('Error', 'Failed to capture image. Please try again.');
+      console.error('Error selecting product image:', error);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
 

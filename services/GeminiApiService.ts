@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 
 export interface Product {
   product: string; // Database field name
@@ -16,8 +16,7 @@ export interface Product {
 }
 
 class GeminiApiService {
-  private genAI: GoogleGenerativeAI | null = null;
-  private model: any = null;
+  private openai: OpenAI | null = null;
 
   constructor() {
     this.initializeClient();
@@ -25,34 +24,35 @@ class GeminiApiService {
 
   private initializeClient() {
     try {
-      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-      
+      const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
       if (!apiKey) {
-        console.error('Gemini API key not configured');
+        console.error('OpenAI API key not configured');
         return;
       }
 
-      this.genAI = new GoogleGenerativeAI(apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
-      
-      console.log('Gemini API client initialized successfully');
+      this.openai = new OpenAI({
+        apiKey: apiKey,
+      });
+
+      console.log('OpenAI API client (GeminiApiService) initialized successfully');
     } catch (error) {
-      console.error('Failed to initialize Gemini API client:', error);
+      console.error('Failed to initialize OpenAI API client:', error);
     }
   }
 
   async structureProductData(rawText: string): Promise<Product | null> {
     try {
-      if (!this.model) {
-        throw new Error('Gemini API client not initialized');
+      if (!this.openai) {
+        throw new Error('OpenAI API client not initialized');
       }
 
       const prompt = `
         You are analyzing OCR text from a grocery store promotional flyer.
         Extract structured product information from the following text.
-        
+
         OCR Text: "${rawText}"
-        
+
         Extract the following information (return null if not found):
         - Product name
         - Price (with currency)
@@ -61,7 +61,7 @@ class GeminiApiService {
         - Brand name
         - Category (infer if possible: dairy, meat, vegetables, etc.)
         - Discount percentage (if mentioned)
-        
+
         Return ONLY a JSON object with these fields. No additional text.
         Example format:
         {
@@ -74,9 +74,16 @@ class GeminiApiService {
         }
       `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      let resultText = response.text().trim();
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 300,
+        temperature: 0.1,
+      });
+
+      let resultText = response.choices[0].message.content?.trim() || "";
 
       // Clean up the response
       if (resultText.startsWith('```json')) {
@@ -104,23 +111,23 @@ class GeminiApiService {
       };
 
     } catch (error) {
-      console.error('Gemini processing error:', error);
+      console.error('OpenAI processing error:', error);
       return null;
     }
   }
 
   async filterUsefulText(rawText: string): Promise<string | null> {
     try {
-      if (!this.model) {
-        throw new Error('Gemini API client not initialized');
+      if (!this.openai) {
+        throw new Error('OpenAI API client not initialized');
       }
 
       const prompt = `
         You are analyzing OCR text from a grocery store promotional image.
         Extract only the useful product information and filter out noise, headers, and irrelevant text.
-        
+
         OCR Text: "${rawText}"
-        
+
         Keep only:
         - Product names
         - Prices and price-related information
@@ -128,7 +135,7 @@ class GeminiApiService {
         - Product sizes/weights
         - Discount information
         - Categories if mentioned
-        
+
         Remove:
         - Store names and logos
         - Page numbers
@@ -136,38 +143,45 @@ class GeminiApiService {
         - Navigation elements
         - Decorative text
         - Repeated headers
-        
+
         Return the cleaned text, organized by product. If no useful product information is found, return "NO_PRODUCTS_FOUND".
       `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const cleanedText = response.text().trim();
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 500,
+        temperature: 0.1,
+      });
+
+      const cleanedText = response.choices[0].message.content?.trim() || "";
 
       return cleanedText === 'NO_PRODUCTS_FOUND' ? null : cleanedText;
 
     } catch (error) {
-      console.error('Gemini filtering error:', error);
+      console.error('OpenAI filtering error:', error);
       return null;
     }
   }
 
   async categorizeProducts(products: Product[]): Promise<Product[]> {
     try {
-      if (!this.model || products.length === 0) {
+      if (!this.openai || products.length === 0) {
         return products;
       }
 
-                const productList = products.map(p => `${p.product} - ${p.price}`).join('\n');
-      
+      const productList = products.map(p => `${p.product} - ${p.price}`).join('\n');
+
       const prompt = `
         Categorize the following grocery products into appropriate categories.
-        
+
         Products:
         ${productList}
-        
+
         Available categories: Dairy, Meat, Vegetables, Fruits, Bakery, Beverages, Snacks, Personal Care, Household, Other
-        
+
         Return a JSON array with each product and its category:
         [
           {"name": "Product Name", "category": "Category"},
@@ -175,9 +189,16 @@ class GeminiApiService {
         ]
       `;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      let resultText = response.text().trim();
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 1000,
+        temperature: 0.1,
+      });
+
+      let resultText = response.choices[0].message.content?.trim() || "";
 
       // Clean up the response
       if (resultText.startsWith('```json')) {
@@ -186,16 +207,16 @@ class GeminiApiService {
       if (resultText.endsWith('```')) {
         resultText = resultText.slice(0, -3);
       }
-      
+
       const categorizedProducts = JSON.parse(resultText);
-      
+
       // Update products with categories
       return products.map(product => {
         const categorized = categorizedProducts.find(
           (cp: any) => cp.product.toLowerCase().includes(product.product.toLowerCase()) ||
                       product.product.toLowerCase().includes(cp.product.toLowerCase())
         );
-        
+
         return {
           ...product,
           category: categorized?.category || product.category || 'Other'
@@ -203,26 +224,32 @@ class GeminiApiService {
       });
 
     } catch (error) {
-      console.error('Gemini categorization error:', error);
+      console.error('OpenAI categorization error:', error);
       return products;
     }
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      if (!this.model) {
+      if (!this.openai) {
         return false;
       }
 
-      const result = await this.model.generateContent("Say 'API test successful' if you can read this.");
-      const response = await result.response;
-      const text = response.text();
-      
-      console.log('Gemini test response:', text);
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: "Say 'API test successful' if you can read this." }
+        ],
+        max_tokens: 50,
+      });
+
+      const text = response.choices[0].message.content || "";
+
+      console.log('OpenAI test response:', text);
       return text.includes('API test successful');
-      
+
     } catch (error) {
-      console.error('Gemini connection test failed:', error);
+      console.error('OpenAI connection test failed:', error);
       return false;
     }
   }

@@ -7,7 +7,11 @@
       "Bash(npm run:*)",
       "Bash(npx tsc:*)",
       "Bash(find:*)",
-      "Bash(npx expo install:*)"
+      "Bash(npx expo install:*)",
+      "Bash(git rm:*)",
+      "Bash(npx eas build:*)",
+      "Bash(npx expo prebuild:*)",
+      "Bash(npx expo:*)"
     ],
     "deny": [],
     "ask": []

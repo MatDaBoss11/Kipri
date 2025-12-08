@@ -20,16 +20,16 @@ export interface ProcessTextResult {
 
 export interface ServiceStatus {
   vision: boolean;
-  gemini: boolean;
   openai: boolean;
+  openai_categorization: boolean;
   supabase: boolean;
 }
 
 class KipriBackendService {
   private serviceStatus: ServiceStatus = {
     vision: false,
-    gemini: false,
     openai: false,
+    openai_categorization: false,
     supabase: false,
   };
 
@@ -39,12 +39,13 @@ class KipriBackendService {
 
   private async initializeServices() {
     console.log('Initializing Kipri Backend Services...');
-    
+
     // Test all services
+    const openaiTest = await GeminiApiService.testConnection();
     this.serviceStatus = {
       vision: await VisionApiService.testConnection(),
-      gemini: await GeminiApiService.testConnection(),
-      openai: await OpenAiService.testConnection(),
+      openai: openaiTest,
+      openai_categorization: await OpenAiService.testConnection(),
       supabase: await SupabaseService.testConnection(),
     };
 
@@ -80,10 +81,10 @@ class KipriBackendService {
 
       console.log(`OCR extracted ${ocrResult.blocks.length} text blocks`);
 
-      // Step 2: Filter and structure with Gemini
-      console.log('Step 2: Processing text with Gemini...');
+      // Step 2: Filter and structure with OpenAI
+      console.log('Step 2: Processing text with OpenAI...');
       const filteredText = await GeminiApiService.filterUsefulText(ocrResult.fullText);
-      
+
       if (!filteredText) {
         return {
           success: false,
@@ -96,7 +97,7 @@ class KipriBackendService {
       // Step 3: Extract structured products
       console.log('Step 3: Structuring product data...');
       const products: Product[] = [];
-      
+
       // Process each text block as a potential product
       for (const block of ocrResult.blocks) {
         if (block.text.trim().length > 5) { // Skip very short text
@@ -111,12 +112,12 @@ class KipriBackendService {
       console.log(`Extracted ${products.length} products`);
 
       // Step 4: Enhanced categorization with OpenAI (if available)
-      if (this.serviceStatus.openai && products.length > 0) {
+      if (this.serviceStatus.openai_categorization && products.length > 0) {
         console.log('Step 4: Enhancing categories with OpenAI...');
         try {
           const productTexts = products.map(p => `${p.product} ${p.category || ''}`.trim());
           const categoryResults = await OpenAiService.batchCategorizeTexts(productTexts);
-          
+
           // Update products with OpenAI categorization
           products.forEach((product, index) => {
             const categoryResult = categoryResults[index];
@@ -125,7 +126,7 @@ class KipriBackendService {
             }
           });
         } catch (error) {
-          console.warn('OpenAI categorization failed, using Gemini categories:', error);
+          console.warn('OpenAI categorization failed, using default categories:', error);
         }
       }
 
@@ -166,7 +167,7 @@ class KipriBackendService {
       console.log('Processing text for food categorization...');
 
       // Use OpenAI for detailed analysis
-      if (this.serviceStatus.openai) {
+      if (this.serviceStatus.openai_categorization) {
         const categoryResult = await OpenAiService.categorizeText(text);
         return {
           success: true,
@@ -367,17 +368,18 @@ class KipriBackendService {
   // Utility methods
   async testAllServices(): Promise<ServiceStatus> {
     console.log('Testing all services...');
-    
+
+    const openaiTest = await GeminiApiService.testConnection();
     const status = {
       vision: await VisionApiService.testConnection(),
-      gemini: await GeminiApiService.testConnection(),
-      openai: await OpenAiService.testConnection(),
+      openai: openaiTest,
+      openai_categorization: await OpenAiService.testConnection(),
       supabase: await SupabaseService.testConnection(),
     };
-    
+
     this.serviceStatus = status;
     console.log('Service test results:', status);
-    
+
     return status;
   }
 
@@ -385,9 +387,6 @@ class KipriBackendService {
     const keys = [];
     if (!process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON.includes('your_')) {
       keys.push('Google Cloud Service Account Credentials');
-    }
-    if (!process.env.EXPO_PUBLIC_GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY.includes('your_')) {
-      keys.push('Gemini API Key');
     }
     if (!process.env.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY.includes('your_')) {
       keys.push('OpenAI API Key');

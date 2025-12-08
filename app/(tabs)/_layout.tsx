@@ -19,21 +19,36 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
-        tabBarStyle: {
-          height: 70,
-          paddingBottom: Platform.OS === 'ios' ? 10 : 8,
-          paddingTop: 8,
-          paddingHorizontal: 12,
-          backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-          borderTopWidth: 0,
-          elevation: 20,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -5 },
-          shadowOpacity: 0.1,
-          shadowRadius: 20,
-        },
-        // Disable animations on Android for instant tab switching
-        animationEnabled: Platform.OS === 'ios',
+        tabBarStyle: Platform.select({
+          ios: {
+            height: 88, // Increased for iOS safe area
+            paddingBottom: 28, // Account for iPhone home indicator
+            paddingTop: 8,
+            paddingHorizontal: 12,
+            backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
+            borderTopWidth: 0,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -5 },
+            shadowOpacity: 0.1,
+            shadowRadius: 20,
+            position: 'absolute', // Ensure tab bar is always visible
+          },
+          default: {
+            height: 70,
+            paddingBottom: 8,
+            paddingTop: 8,
+            paddingHorizontal: 12,
+            backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
+            borderTopWidth: 0,
+            elevation: 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -5 },
+            shadowOpacity: 0.1,
+            shadowRadius: 20,
+          }
+        }),
+        // Enable animations on all platforms
+        animationEnabled: true,
       }}>
       <Tabs.Screen
         name="promotions"

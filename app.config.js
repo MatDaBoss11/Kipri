@@ -7,7 +7,7 @@ export default {
     version: "1.0.0",
     sdkVersion: "54.0.0",
     orientation: "portrait",
-    icon: "./assets/images/icon.png",
+    icon: "./assets/images/icon.jpg",
     scheme: "kipri",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
@@ -18,9 +18,13 @@ export default {
       package: "com.mateencurrimjee.kipri",
       versionCode: 1,
       adaptiveIcon: {
-        foregroundImage: "./assets/images/adaptive-icon.png",
+        foregroundImage: "./assets/images/adaptive-icon.jpg",
         backgroundColor: "#D02919",
       },
+      permissions: [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
     },
     web: {
       bundler: "metro",

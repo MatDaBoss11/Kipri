@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import * as FileSystem from 'expo-file-system/legacy';
 
 // Types matching the backend's ProductData model
@@ -17,32 +17,32 @@ export interface ProcessImageResponse {
 }
 
 /**
- * Service that replicates the backend's exact OCR + Gemini workflow
- * Follows the same pattern as the Python backend in back_end/server.py
+ * Service that replicates the backend's exact OCR + OpenAI workflow
+ * Uses OpenAI instead of Gemini for text processing
  */
 class BackendReplicaService {
-  private genAI: GoogleGenerativeAI | null = null;
-  private model: any = null;
+  private openai: OpenAI | null = null;
 
   constructor() {
-    this.initializeGemini();
+    this.initializeOpenAI();
   }
 
-  private initializeGemini() {
+  private initializeOpenAI() {
     try {
-      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-      
+      const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
       if (!apiKey) {
-        console.error('Gemini API key not configured');
+        console.error('OpenAI API key not configured');
         return;
       }
 
-      this.genAI = new GoogleGenerativeAI(apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
-      
-      console.log('Backend Replica Service - Gemini API client initialized');
+      this.openai = new OpenAI({
+        apiKey: apiKey,
+      });
+
+      console.log('Backend Replica Service - OpenAI API client initialized');
     } catch (error) {
-      console.error('Failed to initialize Gemini API client:', error);
+      console.error('Failed to initialize OpenAI API client:', error);
     }
   }
 
@@ -205,17 +205,17 @@ class BackendReplicaService {
   }
 
   /**
-   * Gemini API call that replicates call_gemini_api() from backend
+   * OpenAI API call that replicates the backend logic
    */
-  private async callGeminiApi(ocrText: string): Promise<ProductData> {
-    if (!this.model) {
-      throw new Error('Gemini API client not initialized');
+  private async callOpenAIApi(ocrText: string): Promise<ProductData> {
+    if (!this.openai) {
+      throw new Error('OpenAI API client not initialized');
     }
 
     // Preprocess OCR text for best candidates (matching backend)
     const filtered = this.preprocessOcrText(ocrText);
-    
-    // Use the exact same prompt as the backend
+
+    // Use the exact same prompt as the backend, adapted for OpenAI
     const prompt = `
 You are a data extraction assistant. Your task is to extract structured product information from OCR'd grocery price tag text.
 
@@ -252,30 +252,37 @@ If any field can't be identified confidently, return an empty string "". Do not 
 `;
 
     try {
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      let content = response.text().trim();
-      
-      console.log('Raw Gemini response:', content);
-      
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 500,
+        temperature: 0.1,
+      });
+
+      let content = response.choices[0].message.content?.trim() || "";
+
+      console.log('Raw OpenAI response:', content);
+
       // Clean markdown formatting (matching backend logic)
       if (content.startsWith("```json")) {
         content = content.substring(7);
       } else if (content.startsWith("```")) {
         content = content.substring(3);
       }
-      
+
       if (content.endsWith("```")) {
         content = content.substring(0, content.length - 3);
       }
-      
+
       content = content.trim();
-      
+
       // Try to parse JSON
       try {
         const parsedData = JSON.parse(content);
         console.log('Successfully parsed JSON:', parsedData);
-        
+
         // Return in the format expected by the frontend (matching ProductData interface)
         return {
           product_name: parsedData.product_name || "",
@@ -284,15 +291,15 @@ If any field can't be identified confidently, return an empty string "". Do not 
           store: "", // Will be filled in by frontend
           categories: [] // Will be filled in by frontend
         };
-        
+
       } catch (jsonError) {
         console.error('JSON decode error:', jsonError);
         console.error('Content that failed to parse:', content);
-        
+
         // Try to extract JSON using regex (matching backend fallback)
         const jsonPattern = /{[^{}]*(?:{[^{}]*}[^{}]*)*}/;
         const match = content.match(jsonPattern);
-        
+
         if (match) {
           try {
             const parsedData = JSON.parse(match[0]);
@@ -308,9 +315,9 @@ If any field can't be identified confidently, return an empty string "". Do not 
             console.error('Regex JSON parse failed:', regexError);
           }
         }
-        
+
         // Return empty structure if all else fails (matching backend)
-        console.warn('Could not parse any JSON from Gemini response, returning empty structure');
+        console.warn('Could not parse any JSON from OpenAI response, returning empty structure');
         return {
           product_name: "",
           price: "",
@@ -319,10 +326,10 @@ If any field can't be identified confidently, return an empty string "". Do not 
           categories: []
         };
       }
-      
+
     } catch (error) {
-      console.error('Error in call_gemini_api:', error);
-      throw new Error(`Gemini API error: ${error}`);
+      console.error('Error in call_openai_api:', error);
+      throw new Error(`OpenAI API error: ${error}`);
     }
   }
 
@@ -345,10 +352,10 @@ If any field can't be identified confidently, return an empty string "". Do not 
         };
       }
       
-      // Step 2: Parse structured data via Gemini (replicating backend step 3)
-      console.log('Step 2: Parse structured data via Gemini');
-      const productData = await this.callGeminiApi(ocrText);
-      console.log('Gemini response:', productData);
+      // Step 2: Parse structured data via OpenAI (replicating backend step 3)
+      console.log('Step 2: Parse structured data via OpenAI');
+      const productData = await this.callOpenAIApi(ocrText);
+      console.log('OpenAI response:', productData);
       
       return {
         success: true,
@@ -365,27 +372,33 @@ If any field can't be identified confidently, return an empty string "". Do not 
   }
 
   /**
-   * Test connection to both Google Vision and Gemini APIs
+   * Test connection to both Google Vision and OpenAI APIs
    */
   async testConnection(): Promise<boolean> {
     try {
       console.log('Testing Backend Replica Service connections...');
-      
-      // Test Gemini
-      if (!this.model) {
-        console.error('Gemini API client not initialized');
+
+      // Test OpenAI
+      if (!this.openai) {
+        console.error('OpenAI API client not initialized');
         return false;
       }
 
-      const testResult = await this.model.generateContent("Say 'test successful' if you can read this.");
-      const testResponse = await testResult.response;
-      const testText = testResponse.text();
-      
+      const testResponse = await this.openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: "Say 'test successful' if you can read this." }
+        ],
+        max_tokens: 50,
+      });
+
+      const testText = testResponse.choices[0].message.content || "";
+
       if (!testText.toLowerCase().includes('test successful')) {
-        console.error('Gemini API test failed');
+        console.error('OpenAI API test failed');
         return false;
       }
-      
+
       // Test Vision API key availability
       const visionApiKey = process.env.EXPO_PUBLIC_GOOGLE_VISION_API_KEY;
       if (!visionApiKey) {
@@ -395,10 +408,10 @@ If any field can't be identified confidently, return an empty string "". Do not 
           return false;
         }
       }
-      
+
       console.log('✅ Backend Replica Service connections OK');
       return true;
-      
+
     } catch (error) {
       console.error('Backend Replica Service connection test failed:', error);
       return false;

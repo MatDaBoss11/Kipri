@@ -498,7 +498,10 @@ const PricesScreen = () => {
           style={styles.productGrid}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.productGridContent}
+          contentContainerStyle={[
+            styles.productGridContent,
+            { paddingBottom: Platform.OS === 'ios' ? 100 : 20 }
+          ]}
         >
           {productGroups.map((group, index) => renderProductGroup(group, index))}
         </ScrollView>
