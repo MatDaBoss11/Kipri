@@ -9,10 +9,17 @@ export default function BlurTabBarBackground() {
       // and matches the native tab bar appearance on iOS.
       tint="systemChromeMaterial"
       intensity={100}
-      style={StyleSheet.absoluteFill}
+      style={[StyleSheet.absoluteFill, styles.blurView]}
     />
   );
 }
+
+const styles = StyleSheet.create({
+  blurView: {
+    // CRITICAL: Allow touches to pass through to the tab buttons underneath
+    pointerEvents: 'none',
+  },
+});
 
 export function useBottomTabOverflow() {
   return useBottomTabBarHeight();

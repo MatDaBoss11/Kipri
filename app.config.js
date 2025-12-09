@@ -49,6 +49,9 @@ export default {
     experiments: {
       typedRoutes: true,
     },
+    updates: {
+      enabled: false,
+    },
     extra: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_ANON_KEY,

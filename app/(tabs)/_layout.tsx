@@ -1,12 +1,44 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, Text, View, StyleSheet } from 'react-native';
 
 import { HapticTab } from '@/components/HapticTab';
 import { IconSymbol } from '@/components/ui/IconSymbol';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
+
+// Kipri branded header title component
+const KipriHeaderTitle = ({ title, colorScheme }: { title: string; colorScheme: 'light' | 'dark' | null }) => {
+  const colors = Colors[colorScheme ?? 'light'];
+  return (
+    <View style={headerStyles.headerTitleContainer}>
+      <Text style={[headerStyles.kipriText, { color: colors.primary }]}>Kipri</Text>
+      <Text style={[headerStyles.separatorText, { color: colors.text, opacity: 0.3 }]}> | </Text>
+      <Text style={[headerStyles.screenTitle, { color: colors.text }]}>{title}</Text>
+    </View>
+  );
+};
+
+const headerStyles = StyleSheet.create({
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  kipriText: {
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  separatorText: {
+    fontSize: 18,
+    fontWeight: '300',
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+});
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -16,7 +48,7 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: '#6366F1',
         tabBarInactiveTintColor: Colors[colorScheme ?? 'light'].tabIconDefault,
-        headerShown: false,
+        headerShown: false, // Keep false - we handle headers in individual screens
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: Platform.select({
@@ -31,7 +63,8 @@ export default function TabLayout() {
             shadowOffset: { width: 0, height: -5 },
             shadowOpacity: 0.1,
             shadowRadius: 20,
-            position: 'absolute', // Ensure tab bar is always visible
+            // NOTE: Removed position: 'absolute' - it was causing touch issues
+            // The tab bar is naturally positioned at the bottom by React Navigation
           },
           default: {
             height: 70,
@@ -47,8 +80,6 @@ export default function TabLayout() {
             shadowRadius: 20,
           }
         }),
-        // Enable animations on all platforms
-        animationEnabled: true,
       }}>
       <Tabs.Screen
         name="promotions"

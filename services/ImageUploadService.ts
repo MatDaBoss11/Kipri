@@ -39,7 +39,7 @@ class ImageUploadService {
 
       // Read the processed image as base64
       const base64 = await FileSystem.readAsStringAsync(manipulatedImage.uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       if (!base64) {

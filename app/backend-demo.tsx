@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { Product } from '../services/GeminiApiService';
 import KipriBackendService, { ServiceStatus } from '../services/KipriBackendService';
@@ -67,7 +67,7 @@ export default function BackendDemoScreen() {
           }
         ]
       );
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to process image');
       setLoading(false);
     }
@@ -90,7 +90,7 @@ export default function BackendDemoScreen() {
       } else {
         Alert.alert('Error', result.error || 'Failed to process text');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to process text');
     } finally {
       setLoading(false);
@@ -104,7 +104,7 @@ export default function BackendDemoScreen() {
       if (result) {
         setProducts(result);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to load products');
     } finally {
       setLoading(false);
@@ -123,7 +123,7 @@ export default function BackendDemoScreen() {
       if (result) {
         setProducts(result);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to search products');
     } finally {
       setLoading(false);
@@ -136,7 +136,7 @@ export default function BackendDemoScreen() {
       await TestServices.populateSampleData();
       Alert.alert('Success', 'Sample data added to database');
       loadProducts();
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to populate sample data');
       setLoading(false);
     }
@@ -154,7 +154,10 @@ export default function BackendDemoScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>Kipri Backend Demo</Text>
+      <View style={styles.titleContainer}>
+        <Text style={styles.kipriLogo}>Kipri</Text>
+        <Text style={styles.title}>Backend Demo</Text>
+      </View>
       
       {/* Service Status */}
       <View style={styles.section}>
@@ -162,8 +165,8 @@ export default function BackendDemoScreen() {
         {serviceStatus ? (
           <View>
             <ServiceStatusIndicator service="Google Vision" status={serviceStatus.vision} />
-            <ServiceStatusIndicator service="Gemini AI" status={serviceStatus.gemini} />
-            <ServiceStatusIndicator service="OpenAI" status={serviceStatus.openai} />
+            <ServiceStatusIndicator service="Gemini AI" status={serviceStatus.openai} />
+            <ServiceStatusIndicator service="OpenAI Categorization" status={serviceStatus.openai_categorization} />
             <ServiceStatusIndicator service="Supabase" status={serviceStatus.supabase} />
           </View>
         ) : (
@@ -260,11 +263,24 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#f5f5f5',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 8,
     marginBottom: 20,
+    paddingTop: 40,
+  },
+  kipriLogo: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#6366F1',
+    letterSpacing: 1,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
     color: '#333',
   },
   section: {

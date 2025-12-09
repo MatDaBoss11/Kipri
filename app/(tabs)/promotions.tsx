@@ -207,11 +207,12 @@ const PromotionsScreen = () => {
             transform: [{ translateY: slideAnim }]
           }
         ]}>
-          <Text style={[styles.storeSelectionTitle, { color: colors.text }]}>
-            Choose Your Store
-          </Text>
+          <View style={styles.storeSelectionHeader}>
+            <Text style={[styles.kipriLogoLarge, { color: colors.primary }]}>Kipri</Text>
+            <Text style={[styles.storeSelectionTitle, { color: colors.text }]}>Deals</Text>
+          </View>
           <Text style={[styles.storeSelectionSubtitle, { color: colors.text, opacity: 0.7 }]}>
-            Select a store to view their latest promotions
+            Choose your store to view latest promotions
           </Text>
           
           <View style={styles.storeButtonsContainer}>
@@ -272,17 +273,20 @@ const PromotionsScreen = () => {
       {/* Header */}
       <BlurView style={styles.header} tint={colorScheme || 'default'} intensity={80}>
         <View style={styles.headerContent}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={showStoreSelectionScreen}
           >
-            <Text style={styles.backButtonIcon}>🏪</Text>
+            <Text style={styles.backButtonIcon}>{"<"}</Text>
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            {selectedStore === 'Tous Les Produits' ? 'Hot Deals & Offers' : `${selectedStore} Deals`}
-          </Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={[styles.kipriHeaderLogo, { color: colors.primary }]}>Kipri</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>
+              {selectedStore === 'Tous Les Produits' ? 'Deals' : selectedStore}
+            </Text>
+          </View>
           <View style={styles.headerAccent}>
-            <Text style={styles.fireIcon}>🔥</Text>
+            <Text style={styles.fireIcon}>Deals</Text>
           </View>
         </View>
       </BlurView>
@@ -337,23 +341,25 @@ const PromotionsScreen = () => {
       >
         {isLoading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#6366F1" />
+            <Text style={[styles.loadingBrand, { color: colors.primary }]}>Kipri</Text>
+            <ActivityIndicator size="large" color="#6366F1" style={styles.loadingSpinner} />
             <Text style={[styles.loadingText, { color: colors.text }]}>
-              Finding amazing deals...
+              Finding the best deals...
             </Text>
           </View>
         ) : filteredPromotions.length === 0 ? (
           <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyBrand, { color: colors.primary }]}>Kipri</Text>
             <View style={styles.emptyIconContainer}>
-              <Text style={styles.emptyIcon}>🏷️</Text>
+              <Text style={styles.emptyIcon}>No deals</Text>
             </View>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               No promotions found
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.text, opacity: 0.6 }]}>
-              {selectedCategory === 'All' 
-                ? 'Check back later for new deals'
-                : `No deals in ${selectedCategory} category`}
+              {selectedCategory === 'All'
+                ? 'Check back soon for new deals!'
+                : `Try selecting a different category`}
             </Text>
           </View>
         ) : (
@@ -467,11 +473,22 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'center',
   },
+  storeSelectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  kipriLogoLarge: {
+    fontSize: 36,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
   storeSelectionTitle: {
     fontSize: 32,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 12,
   },
   storeSelectionSubtitle: {
     fontSize: 16,
@@ -587,21 +604,36 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   backButtonIcon: {
-    fontSize: 20,
+    fontSize: 18,
     color: 'white',
+    fontWeight: 'bold',
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flex: 1,
+    justifyContent: 'center',
+    gap: 6,
+  },
+  kipriHeaderLogo: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    flex: 1,
-    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '600',
+    opacity: 0.8,
   },
   headerAccent: {
     width: 40,
     alignItems: 'center',
   },
   fireIcon: {
-    fontSize: 24,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6366F1',
+    opacity: 0.6,
   },
   categoriesContainer: {
     maxHeight: 70,
@@ -651,15 +683,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 100,
   },
+  loadingBrand: {
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 20,
+  },
+  loadingSpinner: {
+    marginBottom: 16,
+  },
   loadingText: {
-    marginTop: 16,
     fontSize: 16,
+    opacity: 0.7,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 100,
+  },
+  emptyBrand: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 20,
+    opacity: 0.3,
   },
   emptyIconContainer: {
     width: 80,
@@ -671,7 +719,10 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyIcon: {
-    fontSize: 40,
+    fontSize: 14,
+    fontWeight: '600',
+    opacity: 0.5,
+    color: '#ef4444',
   },
   emptyTitle: {
     fontSize: 20,
@@ -680,6 +731,8 @@ const styles = StyleSheet.create({
   },
   emptySubtitle: {
     fontSize: 14,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
   promotionCard: {
     borderRadius: 16,

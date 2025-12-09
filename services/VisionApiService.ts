@@ -26,7 +26,7 @@ class VisionApiService {
     try {
       // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       console.log('📸 Image encoded to base64, length:', base64.length);

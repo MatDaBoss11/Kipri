@@ -442,7 +442,7 @@ class SupabaseService {
         
         // Read the image as base64
         const base64 = await FileSystem.readAsStringAsync(imageUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: 'base64',
         });
         
         console.log('Base64 data length:', base64.length);
@@ -493,7 +493,7 @@ class SupabaseService {
         }
         
         // Create a blob from the Uint8Array
-        const blob = new Blob([uint8Array], { type: 'image/jpeg' });
+        const blob = new Blob([uint8Array.buffer as ArrayBuffer], { type: 'image/jpeg' });
         console.log('Created blob size:', blob.size, 'bytes');
         
         if (blob.size === 0) {
@@ -520,7 +520,7 @@ class SupabaseService {
           console.log('Trying alternative upload method...');
           const { data: altData, error: altError } = await this.supabase.storage
             .from('product-images')
-            .upload(filePath, new Blob([uint8Array], { type: 'image/jpeg' }), {
+            .upload(filePath, new Blob([uint8Array.buffer as ArrayBuffer], { type: 'image/jpeg' }), {
               contentType: 'image/jpeg',
               upsert: true
             });

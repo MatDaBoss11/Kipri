@@ -422,7 +422,10 @@ const PricesScreen = () => {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Kipri</Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={[styles.kipriLogo, { color: colors.primary }]}>Kipri</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.text }]}>Prices</Text>
+        </View>
         <TouchableOpacity
           style={[styles.refreshButton, { backgroundColor: '#3B82F6' }]}
           onPress={handleRefreshData}
@@ -432,7 +435,7 @@ const PricesScreen = () => {
           {isRefreshing ? (
             <ActivityIndicator size="small" color="white" />
           ) : (
-            <Text style={styles.refreshButtonText}>🔄 Refresh</Text>
+            <Text style={styles.refreshButtonText}>Refresh</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -480,17 +483,19 @@ const PricesScreen = () => {
       {/* Products Grid */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.text }]}>Loading prices...</Text>
+          <Text style={[styles.loadingBrand, { color: colors.primary }]}>Kipri</Text>
+          <ActivityIndicator size="large" color={colors.primary} style={styles.loadingSpinner} />
+          <Text style={[styles.loadingText, { color: colors.text }]}>Finding the best prices...</Text>
         </View>
       ) : productGroups.length === 0 ? (
         <View style={styles.emptyContainer}>
+          <Text style={[styles.emptyBrand, { color: colors.primary }]}>Kipri</Text>
           <View style={[styles.emptyIconContainer, { backgroundColor: colors.primary + '20' }]}>
-            <Text style={styles.emptyIcon}>🛍️</Text>
+            <Text style={styles.emptyIcon}>No items</Text>
           </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No products found</Text>
           <Text style={[styles.emptySubtitle, { color: colors.text }]}>
-            {selectedCategory ? 'No products found in this category' : 'Check back later for product updates'}
+            {selectedCategory ? 'Try selecting a different category' : 'Pull down to refresh and check for new deals'}
           </Text>
         </View>
       ) : (
@@ -746,6 +751,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  kipriLogo: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    opacity: 0.7,
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -849,14 +869,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  loadingBrand: {
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 20,
+  },
+  loadingSpinner: {
+    marginBottom: 16,
+  },
   loadingText: {
-    marginTop: 16,
     fontSize: 16,
+    opacity: 0.7,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyBrand: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 20,
+    opacity: 0.3,
   },
   emptyIconContainer: {
     width: 80,
@@ -867,7 +903,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyIcon: {
-    fontSize: 40,
+    fontSize: 14,
+    fontWeight: '600',
+    opacity: 0.5,
   },
   emptyTitle: {
     fontSize: 20,
@@ -877,6 +915,8 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 14,
     opacity: 0.6,
+    textAlign: 'center',
+    paddingHorizontal: 40,
   },
   productGrid: {
     flex: 1,

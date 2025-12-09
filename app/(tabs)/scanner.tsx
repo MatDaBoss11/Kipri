@@ -569,8 +569,11 @@ const ScannerScreen = () => {
           <View style={styles.iconContainer}>
             <Text style={styles.scannerIcon}>📱</Text>
           </View>
-          
-          <Text style={[styles.modeTitle, { color: colors.text }]}>Product Scanner</Text>
+
+          <View style={styles.modeTitleContainer}>
+            <Text style={[styles.kipriLogoLarge, { color: colors.primary }]}>Kipri</Text>
+            <Text style={[styles.modeTitle, { color: colors.text }]}>Scanner</Text>
+          </View>
           
           <View style={styles.modeButtonsContainer}>
             <TouchableOpacity
@@ -607,15 +610,18 @@ const ScannerScreen = () => {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <BlurView style={styles.header} tint={colorScheme || 'light'} intensity={80}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.backButton, { backgroundColor: colors.primary }]}
           onPress={() => setShowModeSelection(true)}
         >
-          <Text style={styles.backButtonText}>←</Text>
+          <Text style={styles.backButtonText}>{"<"}</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
-          {mode === AppMode.ADD ? 'Add Product' : 'Update Product'}
-        </Text>
+        <View style={styles.headerTitleRow}>
+          <Text style={[styles.kipriHeaderLogo, { color: colors.primary }]}>Kipri</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            {mode === AppMode.ADD ? 'Add Product' : 'Update Product'}
+          </Text>
+        </View>
         <View style={styles.headerSpacer} />
       </BlurView>
 
@@ -778,7 +784,7 @@ const ScannerScreen = () => {
           <TouchableOpacity
             style={[
               styles.submitButton,
-              { 
+              {
                 backgroundColor: isProcessing ? colors.background : colors.primary,
                 opacity: isProcessing ? 0.6 : 1
               }
@@ -789,7 +795,9 @@ const ScannerScreen = () => {
             {isProcessing ? (
               <ActivityIndicator color="white" size="small" />
             ) : (
-              <Text style={styles.submitButtonText}>SUBMIT</Text>
+              <Text style={styles.submitButtonText}>
+                {mode === AppMode.ADD ? 'ADD TO KIPRI' : 'UPDATE IN KIPRI'}
+              </Text>
             )}
           </TouchableOpacity>
         </View>
@@ -814,10 +822,21 @@ const styles = StyleSheet.create({
   scannerIcon: {
     fontSize: 100,
   },
+  modeTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 60,
+  },
+  kipriLogoLarge: {
+    fontSize: 36,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+  },
   modeTitle: {
     fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 60,
     textAlign: 'center',
   },
   modeButtonsContainer: {
@@ -868,9 +887,22 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  headerTitle: {
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flex: 1,
+    justifyContent: 'center',
+    gap: 6,
+  },
+  kipriHeaderLogo: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    opacity: 0.8,
   },
   headerSpacer: {
     width: 40,
