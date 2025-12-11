@@ -198,11 +198,19 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
   };
 
   const getHighestPrice = (): number => {
+    // Use original prices for highest calculation
     return Math.max(...products.map(p => getPrice(p)));
   };
 
   const getSavingsPercentage = (): number => {
-    const lowest = getLowestPrice();
+    const lowest = Math.min(...products.map(p => {
+      const isProductType = !isPromotion(p);
+      if (isProductType) {
+        const promo = findPromotionForProduct(p as Product, promotions);
+        return promo ? promo.new_price : getPrice(p);
+      }
+      return getPrice(p);
+    }));
     const highest = getHighestPrice();
     if (highest === 0) return 0;
     return Math.round(((highest - lowest) / highest) * 100);
@@ -216,10 +224,22 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     return colors.primary;
   };
 
-  const getPriceColor = (price: number): string => {
-    const lowestPrice = getLowestPrice();
+  const getEffectiveModalPrice = (product: Product | Promotion): { price: number; isPromotion: boolean; originalPrice: number } => {
+    const isProductType = !isPromotion(product);
+    if (isProductType) {
+      const promo = findPromotionForProduct(product as Product, promotions);
+      if (promo) {
+        return { price: promo.new_price, isPromotion: true, originalPrice: getPrice(product) };
+      }
+    }
+    return { price: getPrice(product), isPromotion: false, originalPrice: getPrice(product) };
+  };
+
+  const getPriceColor = (price: number, hasPromo: boolean): string => {
+    // Recalculate lowest considering promotions
+    const lowestPrice = Math.min(...products.map(p => getEffectiveModalPrice(p).price));
     if (price === lowestPrice && products.length > 1) {
-      return '#10b981';
+      return hasPromo ? '#ff6b6b' : '#10b981';
     }
     if (price > lowestPrice * 1.1) {
       return '#ef4444';
@@ -227,7 +247,7 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     return colors.text;
   };
 
-  const lowestPrice = getLowestPrice();
+  const lowestPrice = Math.min(...products.map(p => getEffectiveModalPrice(p).price));
   const highestPrice = getHighestPrice();
   const savingsPercentage = getSavingsPercentage();
 
@@ -468,12 +488,18 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
               {products.map((product, index) => {
                 const storeName = getStoreName(product);
                 const productName = getProductName(product);
-                const price = getPrice(product);
-                const isPriceLowest = price === lowestPrice && products.length > 1;
+                const effectivePrice = getEffectiveModalPrice(product);
+                const displayPrice = effectivePrice.price;
+                const hasPromo = effectivePrice.isPromotion;
+                const originalPrice = effectivePrice.originalPrice;
+
+                // Recalculate lowest with promos for comparison
+                const lowestWithPromos = Math.min(...products.map(p => getEffectiveModalPrice(p).price));
+                const isPriceLowest = displayPrice === lowestWithPromos && products.length > 1;
+
                 const isPromo = isPromotion(product);
-                const previousPrice = getPreviousPrice(product);
                 const isProductType = !isPromo;
-                const hasPromo = isProductType ? findPromotionForProduct(product as Product, promotions) !== null : false;
+                const previousPrice = getPreviousPrice(product);
 
                 return (
                   <View
@@ -482,11 +508,12 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                       styles.storeCard,
                       { backgroundColor: colors.background },
                       isPriceLowest && styles.bestPriceCard,
-                      isPriceLowest && { borderColor: '#10b981' }
+                      isPriceLowest && hasPromo && { borderColor: '#ff6b6b' },
+                      isPriceLowest && !hasPromo && { borderColor: '#10b981' }
                     ]}
                   >
                     {isPriceLowest && (
-                      <View style={styles.bestPriceBadge}>
+                      <View style={[styles.bestPriceBadge, { backgroundColor: hasPromo ? '#ff6b6b' : '#10b981' }]}>
                         <Text style={styles.bestPriceText}>BEST PRICE</Text>
                       </View>
                     )}
@@ -509,7 +536,12 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                         )}
                       </View>
                       <View style={styles.priceColumn}>
-                        {isPromo && previousPrice && (
+                        {hasPromo && originalPrice !== displayPrice && (
+                          <Text style={[styles.previousPriceLarge, { color: colors.error }]}>
+                            Rs {formatPrice(originalPrice)}
+                          </Text>
+                        )}
+                        {isPromo && previousPrice && !hasPromo && (
                           <Text style={[styles.previousPriceLarge, { color: colors.error }]}>
                             Rs {formatPrice(previousPrice)}
                           </Text>
@@ -517,11 +549,11 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                         <Text
                           style={[
                             styles.storePriceLarge,
-                            { color: getPriceColor(price) },
+                            { color: getPriceColor(displayPrice, hasPromo) },
                             isPriceLowest && styles.bestPriceAmount
                           ]}
                         >
-                          Rs {formatPrice(price)}
+                          Rs {formatPrice(displayPrice)}
                         </Text>
                       </View>
                     </View>
