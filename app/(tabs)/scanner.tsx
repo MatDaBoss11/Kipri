@@ -558,10 +558,13 @@ const ScannerScreen = () => {
 
   if (showModeSelection) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <LinearGradient
+        colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
+        style={[styles.container, { paddingTop: insets.top }]}
+      >
         <Animated.View style={[
           styles.modeSelectionContainer,
-          { 
+          {
             opacity: fadeAnim,
             transform: [{ scale: scaleAnim }]
           }
@@ -603,12 +606,15 @@ const ScannerScreen = () => {
             </TouchableOpacity>
           </View>
         </Animated.View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       <BlurView style={styles.header} tint={colorScheme || 'light'} intensity={80}>
         <TouchableOpacity
           style={[styles.backButton, { backgroundColor: colors.primary }]}
@@ -625,7 +631,7 @@ const ScannerScreen = () => {
         <View style={styles.headerSpacer} />
       </BlurView>
 
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         {/* Receipt Image Section */}
         <View style={styles.section}>
           <TouchableOpacity 
@@ -802,7 +808,7 @@ const ScannerScreen = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 

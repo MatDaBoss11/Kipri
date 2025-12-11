@@ -214,7 +214,7 @@ const PricesScreen = () => {
 
   return (
     <LinearGradient
-      colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f8f8f8', '#f4f4f4', '#f6f6f6']}
+      colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
       style={[styles.container, { paddingTop: insets.top }]}
     >
       {/* Header */}

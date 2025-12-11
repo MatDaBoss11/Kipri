@@ -21,6 +21,7 @@ const MAPPING = {
   'tag.fill': 'local-offer',
   'bag.fill': 'shopping-bag',
   'qrcode': 'qr-code',
+  'photo.camera.fill': 'photo-camera',
 } as IconMapping;
 
 /**

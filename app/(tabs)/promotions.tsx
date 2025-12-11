@@ -210,7 +210,10 @@ const PromotionsScreen = () => {
 
   if (showStoreSelection) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <LinearGradient
+        colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
+        style={[styles.container, { paddingTop: insets.top }]}
+      >
         <Animated.View style={[
           styles.storeSelectionContainer,
           { 
@@ -275,12 +278,15 @@ const PromotionsScreen = () => {
             ))}
           </View>
         </Animated.View>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       {/* Header */}
       <BlurView style={styles.header} tint={colorScheme || 'default'} intensity={80}>
         <View style={styles.headerContent}>
@@ -471,7 +477,7 @@ const PromotionsScreen = () => {
           ))
         )}
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 

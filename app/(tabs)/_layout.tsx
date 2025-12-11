@@ -51,32 +51,48 @@ export default function TabLayout() {
         headerShown: false, // Keep false - we handle headers in individual screens
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
+        sceneContainerStyle: {
+          paddingBottom: 104, // Space for floating tab bar
+          backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#f3f3f3',
+        },
         tabBarStyle: Platform.select({
           ios: {
-            height: 88, // Increased for iOS safe area
-            paddingBottom: 28, // Account for iPhone home indicator
-            paddingTop: 8,
-            paddingHorizontal: 12,
+            height: 80,
+            paddingBottom: 12,
+            paddingTop: 20,
+            paddingHorizontal: 16,
+            marginHorizontal: 16,
+            marginBottom: 12,
             backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
             borderTopWidth: 0,
+            borderRadius: 30,
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
             shadowColor: '#000',
-            shadowOffset: { width: 0, height: -5 },
-            shadowOpacity: 0.1,
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.25,
             shadowRadius: 20,
-            // NOTE: Removed position: 'absolute' - it was causing touch issues
-            // The tab bar is naturally positioned at the bottom by React Navigation
           },
           default: {
-            height: 70,
-            paddingBottom: 8,
-            paddingTop: 8,
-            paddingHorizontal: 12,
+            height: 80,
+            paddingBottom: 12,
+            paddingTop: 20,
+            paddingHorizontal: 16,
+            marginHorizontal: 16,
+            marginBottom: 12,
             backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
             borderTopWidth: 0,
-            elevation: 20,
+            borderRadius: 30,
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            elevation: 16,
             shadowColor: '#000',
-            shadowOffset: { width: 0, height: -5 },
-            shadowOpacity: 0.1,
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.25,
             shadowRadius: 20,
           }
         }),
@@ -87,15 +103,12 @@ export default function TabLayout() {
           title: 'Promotions',
           tabBarIcon: ({ color, focused }) => (
             <IconSymbol
-              size={24}
+              size={32}
               name="tag.fill"
               color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
             />
           ),
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '600',
-          }
+          tabBarLabel: () => null,
         }}
       />
       <Tabs.Screen
@@ -104,15 +117,12 @@ export default function TabLayout() {
           title: 'Prices',
           tabBarIcon: ({ color, focused }) => (
             <IconSymbol
-              size={24}
+              size={32}
               name="bag.fill"
               color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
             />
           ),
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '600',
-          }
+          tabBarLabel: () => null,
         }}
       />
       <Tabs.Screen
@@ -121,15 +131,12 @@ export default function TabLayout() {
           title: 'Scanner',
           tabBarIcon: ({ color, focused }) => (
             <IconSymbol
-              size={24}
-              name="qrcode"
+              size={32}
+              name="photo.camera.fill"
               color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
             />
           ),
-          tabBarLabelStyle: {
-            fontSize: 12,
-            fontWeight: '600',
-          }
+          tabBarLabel: () => null,
         }}
       />
     </Tabs>
