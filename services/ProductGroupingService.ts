@@ -7,6 +7,24 @@ export interface ProductGroup {
   priceComparison?: PriceComparison;
 }
 
+// Store priority for image selection: Winners > Super U > King Savers
+const STORE_PRIORITY: { [key: string]: number } = {
+  'winners': 1,
+  'super u': 2,
+  'kingsavers': 3,
+  'king savers': 3,
+};
+
+export interface CombinedProduct {
+  id: string;
+  name: string;
+  size?: string;
+  category?: string;
+  products: (Product | Promotion)[];
+  primaryProduct: Product | Promotion;
+  primaryImageProductId: string;
+}
+
 export interface PriceComparison {
   lowest: number;
   middle?: number;
@@ -37,19 +55,24 @@ class ProductGroupingService {
 
   // Main grouping function
   public groupProducts(items: (Product | Promotion)[]): ProductGroup[] {
+    console.log(`[ProductGrouping] Starting to group ${items.length} items`);
     const groups: ProductGroup[] = [];
     const usedItems = new Set<string>();
 
     // Group by category first
     const categorizedItems = this.groupByCategory(items);
+    console.log(`[ProductGrouping] Categories found: ${Array.from(categorizedItems.keys()).join(', ')}`);
 
     for (const [category, categoryItems] of categorizedItems) {
+      console.log(`[ProductGrouping] Processing category "${category}" with ${categoryItems.length} items`);
       const categoryGroups = this.createGroupsForCategory(categoryItems, usedItems);
+      console.log(`[ProductGrouping] Created ${categoryGroups.length} groups for category "${category}"`);
       groups.push(...categoryGroups);
     }
 
     // Add remaining individual items as single-item groups
     const remainingItems = items.filter(item => !usedItems.has(item.id));
+    console.log(`[ProductGrouping] ${remainingItems.length} items remaining (not grouped with others)`);
     remainingItems.forEach((item, index) => {
       const group: ProductGroup = {
         id: `single_${item.id}_${Date.now()}_${index}`,
@@ -59,6 +82,7 @@ class ProductGroupingService {
       groups.push(group);
     });
 
+    console.log(`[ProductGrouping] Total groups created: ${groups.length} (${groups.filter(g => g.products.length > 1).length} multi-item, ${groups.filter(g => g.products.length === 1).length} single-item)`);
     return groups;
   }
 
@@ -66,8 +90,9 @@ class ProductGroupingService {
     const categoryMap = new Map<string, (Product | Promotion)[]>();
 
     items.forEach(item => {
-      const category = this.getItemCategory(item) || 'miscellaneous';
-      
+      // Normalize category to lowercase for consistent grouping
+      const category = (this.getItemCategory(item) || 'miscellaneous').toLowerCase().trim();
+
       if (!categoryMap.has(category)) {
         categoryMap.set(category, []);
       }
@@ -86,22 +111,35 @@ class ProductGroupingService {
 
     if (availableItems.length === 0) return groups;
 
+    // Log available items for debugging
+    console.log(`[ProductGrouping] Available items in category:`);
+    availableItems.forEach(item => {
+      const name = this.getItemName(item);
+      const store = this.getItemStore(item);
+      console.log(`  - "${name}" from ${store}`);
+    });
+
     // Step 1: Build a global similarity matrix for all items in this category
     const similarityMatrix = this.buildSimilarityMatrix(availableItems);
-    
+
     // Step 2: Find optimal groupings using global analysis
     const optimalGroups = this.findOptimalGroupings(availableItems, similarityMatrix);
-    
+    console.log(`[ProductGrouping] Found ${optimalGroups.length} optimal groups`);
+
     // Step 3: Create ProductGroup objects from optimal groupings
     optimalGroups.forEach((groupItems, index) => {
-      if (this.hasStoreDiversity(groupItems)) {
+      const stores = groupItems.map(item => this.getItemStore(item));
+      const hasDiv = this.hasStoreDiversity(groupItems);
+      console.log(`[ProductGrouping] Optimal group ${index}: ${groupItems.length} items, stores: [${stores.join(', ')}], hasStoreDiversity: ${hasDiv}`);
+
+      if (hasDiv) {
         // Sort products by price: highest first (left), lowest last (right)
         const sortedItems = [...groupItems].sort((a, b) => {
           const priceA = this.getItemPrice(a);
           const priceB = this.getItemPrice(b);
           return priceB - priceA; // Descending order (highest to lowest)
         });
-        
+
         const group: ProductGroup = {
           id: `group_${groupItems.length}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${index}`,
           products: sortedItems,
@@ -109,7 +147,7 @@ class ProductGroupingService {
           priceComparison: this.calculatePriceComparison(sortedItems)
         };
         groups.push(group);
-        
+
         // Mark items as used
         groupItems.forEach(item => usedItems.add(item.id));
       }
@@ -200,8 +238,10 @@ class ProductGroupingService {
   }
 
   private calculateSimilarityScore(item1: Product | Promotion, item2: Product | Promotion): number {
-    // Must be same category
-    if (this.getItemCategory(item1) !== this.getItemCategory(item2)) {
+    // Must be same category (case-insensitive comparison)
+    const cat1 = (this.getItemCategory(item1) || '').toLowerCase().trim();
+    const cat2 = (this.getItemCategory(item2) || '').toLowerCase().trim();
+    if (cat1 !== cat2) {
       return 0;
     }
 
@@ -500,6 +540,54 @@ class ProductGroupingService {
     if (itemIndex === highestIndex) return PriceLevel.HIGHEST;
 
     return PriceLevel.NEUTRAL;
+  }
+
+  // Convert product groups to combined products for the new card design
+  public createCombinedProducts(groups: ProductGroup[]): CombinedProduct[] {
+    return groups.map((group, index) => {
+      const products = group.products;
+
+      // Find the primary product based on store priority (Winners > Super U > King Savers)
+      const sortedByPriority = [...products].sort((a, b) => {
+        const storeA = this.getItemStore(a).toLowerCase();
+        const storeB = this.getItemStore(b).toLowerCase();
+        const priorityA = this.getStorePriority(storeA);
+        const priorityB = this.getStorePriority(storeB);
+        return priorityA - priorityB;
+      });
+
+      const primaryProduct = sortedByPriority[0];
+      const primaryProductId = primaryProduct.id;
+
+      // Get name from primary product
+      const name = this.getItemName(primaryProduct);
+      const size = this.getItemSize(primaryProduct);
+      const category = this.getItemCategory(primaryProduct);
+
+      // Sort products by price (lowest first for display)
+      const sortedByPrice = [...products].sort((a, b) => {
+        return this.getItemPrice(a) - this.getItemPrice(b);
+      });
+
+      return {
+        id: `combined_${group.id}_${index}`,
+        name,
+        size,
+        category,
+        products: sortedByPrice,
+        primaryProduct,
+        primaryImageProductId: primaryProductId,
+      };
+    });
+  }
+
+  // Get store priority for image selection
+  private getStorePriority(storeName: string): number {
+    const normalized = storeName.toLowerCase();
+    if (normalized.includes('winner')) return STORE_PRIORITY['winners'];
+    if (normalized.includes('super') || normalized.includes(' u')) return STORE_PRIORITY['super u'];
+    if (normalized.includes('king') || normalized.includes('saver')) return STORE_PRIORITY['kingsavers'];
+    return 99; // Default priority for unknown stores
   }
 }
 

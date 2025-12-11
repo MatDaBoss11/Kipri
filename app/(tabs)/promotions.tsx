@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORE_INFO } from '../../constants/categories';
+import { filterPromotionsByMainList } from '../../constants/mainProductList';
 import DataCacheService from '../../services/DataCacheService';
 import { Promotion } from '../../types';
 
@@ -68,13 +69,23 @@ const PromotionsScreen = () => {
     try {
       setIsLoading(true);
       const allPromotions = await cacheService.getPromotions();
-      
-      const filtered = selectedStore === 'Tous Les Produits' 
-        ? allPromotions
-        : allPromotions.filter(item => item.store_name === selectedStore);
-      
+
+      let filtered: Promotion[];
+
+      if (selectedStore === 'Tous Les Produits') {
+        // For "All Products" view, filter to only show products from the main product list
+        // This filtering happens AFTER receiving data from the database
+        filtered = filterPromotionsByMainList(allPromotions);
+        console.log(`Filtered promotions: ${filtered.length} out of ${allPromotions.length} match main product list`);
+      } else {
+        // For specific store view, also filter by main product list
+        const storeFiltered = allPromotions.filter(item => item.store_name === selectedStore);
+        filtered = filterPromotionsByMainList(storeFiltered);
+        console.log(`Store "${selectedStore}": ${filtered.length} out of ${storeFiltered.length} match main product list`);
+      }
+
       setPromotions(filtered);
-      
+
       // Extract categories (normalize case)
       const categorySet = new Set(['All']);
       filtered.forEach(item => {
@@ -85,7 +96,7 @@ const PromotionsScreen = () => {
         }
       });
       setCategories(Array.from(categorySet));
-      
+
     } catch (error) {
       console.error('Error fetching promotions:', error);
       Alert.alert('Error', 'Failed to load promotions. Please try again.');
