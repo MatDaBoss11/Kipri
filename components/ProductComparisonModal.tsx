@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,10 @@ import {
   TextInput,
   Alert,
   ColorSchemeName,
+  FlatList,
+  Dimensions,
+  PanResponder,
+  GestureResponderEvent,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
@@ -20,6 +24,8 @@ import { CombinedProduct } from './CombinedProductCard';
 import DataCacheService from '../services/DataCacheService';
 import SupabaseService from '../services/SupabaseService';
 import { findPromotionForProduct } from '../constants/mainProductList';
+
+const NO_IMAGE_PLACEHOLDER = require('../assets/images/Screenshot 2025-12-11 121944.png');
 
 interface ProductComparisonModalProps {
   visible: boolean;
@@ -42,32 +48,93 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
 }) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
+  const [isImagePlaceholder, setIsImagePlaceholder] = useState(false);
   const [selectedProductForUpdate, setSelectedProductForUpdate] = useState<Product | null>(null);
   const [showUpdatePrice, setShowUpdatePrice] = useState(false);
   const [newPrice, setNewPrice] = useState('');
   const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
+  const [carouselImages, setCarouselImages] = useState<{ url: string | null; storeName: string; loading: boolean; isPlaceholder?: boolean }[]>([]);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderRelease: (evt: GestureResponderEvent) => {
+        const { translationX } = evt.nativeEvent;
+        const threshold = 50;
+
+        if (translationX > threshold && currentImageIndex > 0) {
+          // Swiped right - go to previous image
+          setCurrentImageIndex(currentImageIndex - 1);
+        } else if (translationX < -threshold && currentImageIndex < carouselImages.length - 1) {
+          // Swiped left - go to next image
+          setCurrentImageIndex(currentImageIndex + 1);
+        }
+      },
+    })
+  ).current;
 
   const cacheService = DataCacheService.getInstance();
+
+  const goToPreviousImage = () => {
+    if (currentImageIndex > 0) {
+      setCurrentImageIndex(currentImageIndex - 1);
+    }
+  };
+
+  const goToNextImage = () => {
+    if (currentImageIndex < carouselImages.length - 1) {
+      setCurrentImageIndex(currentImageIndex + 1);
+    }
+  };
 
   const loadImage = useCallback(async () => {
     if (!combinedProduct) return;
 
     try {
       setImageLoading(true);
+      setIsImagePlaceholder(false);
       const url = await cacheService.getSignedImageUrl(combinedProduct.primaryImageProductId, true);
       setImageUrl(url);
     } catch (error) {
       console.error('Error loading image:', error);
+      // Use local placeholder image when no image is available
+      setIsImagePlaceholder(true);
     } finally {
       setImageLoading(false);
+    }
+  }, [combinedProduct, cacheService]);
+
+  const loadCarouselImages = useCallback(async () => {
+    if (!combinedProduct) return;
+
+    try {
+      const imagePromises = combinedProduct.products.map(async (product) => {
+        const storeName = getStoreName(product);
+        try {
+          const url = await cacheService.getSignedImageUrl(product.id, true);
+          return { url, storeName, loading: false };
+        } catch (error) {
+          console.error(`Error loading image for ${storeName}:`, error);
+          // Use local placeholder image when no image is available
+          return { url: null, storeName, loading: false, isPlaceholder: true };
+        }
+      });
+
+      const images = await Promise.all(imagePromises);
+      setCarouselImages(images);
+      setCurrentImageIndex(0);
+    } catch (error) {
+      console.error('Error loading carousel images:', error);
     }
   }, [combinedProduct, cacheService]);
 
   useEffect(() => {
     if (visible && combinedProduct) {
       loadImage();
+      loadCarouselImages();
     }
-  }, [visible, combinedProduct, loadImage]);
+  }, [visible, combinedProduct, loadImage, loadCarouselImages]);
 
   if (!combinedProduct) return null;
 
@@ -284,21 +351,81 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
               contentContainerStyle={{ paddingBottom: Platform.OS === 'android' ? 40 : 20 }}
               showsVerticalScrollIndicator={false}
             >
-              {/* Product Image */}
-              <View style={styles.imageContainer}>
-                {imageLoading ? (
-                  <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                  </View>
-                ) : imageUrl ? (
-                  <Image
-                    source={{ uri: imageUrl }}
-                    style={styles.productImage}
-                    contentFit="cover"
-                  />
+              {/* Product Image Carousel */}
+              <View style={styles.carouselContainer}>
+                {carouselImages.length > 0 ? (
+                  <>
+                    <View style={styles.carouselWrapper} {...panResponder.panHandlers}>
+                      {/* Left Arrow */}
+                      {currentImageIndex > 0 && (
+                        <TouchableOpacity
+                          style={styles.arrowButton}
+                          onPress={goToPreviousImage}
+                        >
+                          <Text style={styles.arrowText}>‹</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <View style={styles.imageWrapper}>
+                        {carouselImages[currentImageIndex]?.loading ? (
+                          <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
+                            <ActivityIndicator size="large" color={colors.primary} />
+                          </View>
+                        ) : carouselImages[currentImageIndex]?.isPlaceholder ? (
+                          <Image
+                            source={NO_IMAGE_PLACEHOLDER}
+                            style={styles.productImage}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <Image
+                            source={{ uri: carouselImages[currentImageIndex]?.url }}
+                            style={styles.productImage}
+                            contentFit="cover"
+                          />
+                        )}
+                      </View>
+
+                      {/* Right Arrow */}
+                      {currentImageIndex < carouselImages.length - 1 && (
+                        <TouchableOpacity
+                          style={styles.arrowButton}
+                          onPress={goToNextImage}
+                        >
+                          <Text style={styles.arrowText}>›</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* Supermarket Name Below Image */}
+                    <Text style={[styles.storeLabel, { color: colors.text }]}>
+                      {carouselImages[currentImageIndex]?.storeName}
+                    </Text>
+
+                    {/* Carousel Dots/Navigation */}
+                    {carouselImages.length > 1 && (
+                      <View style={styles.carouselDots}>
+                        {carouselImages.map((_, index) => (
+                          <TouchableOpacity
+                            key={index}
+                            style={[
+                              styles.dot,
+                              {
+                                backgroundColor:
+                                  index === currentImageIndex
+                                    ? colors.primary
+                                    : colors.primary + '40'
+                              }
+                            ]}
+                            onPress={() => setCurrentImageIndex(index)}
+                          />
+                        ))}
+                      </View>
+                    )}
+                  </>
                 ) : (
                   <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
-                    <Text style={styles.placeholderIcon}>No Image</Text>
+                    <ActivityIndicator size="large" color={colors.primary} />
                   </View>
                 )}
               </View>
@@ -571,9 +698,19 @@ const styles = StyleSheet.create({
   modalBody: {
     padding: 16,
   },
-  imageContainer: {
+  carouselContainer: {
     alignItems: 'center',
     marginBottom: 20,
+  },
+  carouselWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  imageWrapper: {
+    alignItems: 'center',
+    marginBottom: 8,
   },
   productImage: {
     width: 180,
@@ -586,6 +723,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  arrowButton: {
+    padding: 8,
+  },
+  arrowText: {
+    fontSize: 32,
+    fontWeight: '300',
+    color: '#000',
+  },
+  storeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  carouselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   placeholderIcon: {
     fontSize: 14,

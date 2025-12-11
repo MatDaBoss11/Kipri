@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { Product, Promotion } from '../types';
+import { findPromotionForProduct } from '../constants/mainProductList';
 
 const { width } = Dimensions.get('window');
 
@@ -38,6 +39,7 @@ interface CombinedProductCardProps {
   colorScheme: ColorSchemeName;
   imageUrl: string | null;
   imageLoading: boolean;
+  promotions?: Promotion[];
 }
 
 const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
@@ -47,6 +49,7 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
   colorScheme,
   imageUrl,
   imageLoading,
+  promotions = [],
 }) => {
   const { name, size, products } = combinedProduct;
 
@@ -69,6 +72,17 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     return undefined;
   };
 
+  const getEffectivePrice = (item: Product | Promotion): { price: number; isPromotion: boolean } => {
+    // Only regular products can have promotions, not promotions themselves
+    if ('store' in item && !('isPromotion' in item)) {
+      const promotion = findPromotionForProduct(item as Product, promotions);
+      if (promotion) {
+        return { price: promotion.new_price, isPromotion: true };
+      }
+    }
+    return { price: getPrice(item), isPromotion: false };
+  };
+
   const formatPrice = (price: any): string => {
     if (price == null) return '0.00';
     try {
@@ -79,9 +93,9 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     }
   };
 
-  // Get the lowest price from all stores for highlighting
+  // Get the lowest price from all stores for highlighting (includes promotions)
   const getLowestPrice = (): number => {
-    return Math.min(...products.map(p => getPrice(p)));
+    return Math.min(...products.map(p => getEffectivePrice(p).price));
   };
 
   // Get store color based on store name
@@ -93,11 +107,11 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     return colors.primary;
   };
 
-  // Get price color based on whether it's the lowest
-  const getPriceColor = (price: number): string => {
+  // Get price color based on whether it's the lowest (uses effective prices)
+  const getPriceColor = (price: number, isPromo: boolean): string => {
     const lowestPrice = getLowestPrice();
     if (price === lowestPrice && products.length > 1) {
-      return '#10b981'; // Green for lowest price
+      return isPromo ? '#ff6b6b' : '#10b981'; // Red for promo, green for lowest
     }
     if (price > lowestPrice * 1.1) {
       return '#ef4444'; // Red for higher prices
@@ -150,10 +164,12 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
         <View style={styles.pricesContainer}>
           {products.map((product, index) => {
             const storeName = getStoreName(product);
-            const price = getPrice(product);
-            const isPriceLowest = price === lowestPrice && products.length > 1;
+            const effectivePrice = getEffectivePrice(product);
+            const displayPrice = effectivePrice.price;
+            const hasPromo = effectivePrice.isPromotion;
+            const isPriceLowest = displayPrice === lowestPrice && products.length > 1;
             const isPromo = isPromotion(product);
-            const previousPrice = getPreviousPrice(product);
+            const originalPrice = getPrice(product);
 
             return (
               <View
@@ -161,7 +177,8 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
                 style={[
                   styles.priceRow,
                   isPriceLowest && styles.lowestPriceRow,
-                  isPriceLowest && { backgroundColor: '#10b98115' }
+                  isPriceLowest && hasPromo && { backgroundColor: '#ff6b6b15' },
+                  isPriceLowest && !hasPromo && { backgroundColor: '#10b98115' }
                 ]}
               >
                 <View style={styles.storeNameContainer}>
@@ -180,26 +197,26 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
                   >
                     {storeName}
                   </Text>
-                  {isPromo && (
+                  {(isPromo || hasPromo) && (
                     <View style={styles.promoBadge}>
                       <Text style={styles.promoText}>PROMO</Text>
                     </View>
                   )}
                 </View>
                 <View style={styles.priceContainer}>
-                  {isPromo && previousPrice && (
+                  {hasPromo && originalPrice !== displayPrice && (
                     <Text style={[styles.previousPrice, { color: colors.error }]}>
-                      Rs {formatPrice(previousPrice)}
+                      Rs {formatPrice(originalPrice)}
                     </Text>
                   )}
                   <Text
                     style={[
                       styles.priceText,
-                      { color: getPriceColor(price) },
+                      { color: getPriceColor(displayPrice, hasPromo) },
                       isPriceLowest && styles.lowestPriceText
                     ]}
                   >
-                    Rs {formatPrice(price)}
+                    Rs {formatPrice(displayPrice)}
                   </Text>
                 </View>
               </View>

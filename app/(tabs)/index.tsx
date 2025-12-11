@@ -207,6 +207,7 @@ const PricesScreen = () => {
         colorScheme={colorScheme}
         imageUrl={imageData.url}
         imageLoading={imageData.loading}
+        promotions={promotions}
       />
     );
   };
