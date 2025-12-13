@@ -19,11 +19,13 @@ import {
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Product, Promotion } from '../types';
 import { CombinedProduct } from './CombinedProductCard';
 import DataCacheService from '../services/DataCacheService';
 import SupabaseService from '../services/SupabaseService';
 import { findPromotionForProduct } from '../constants/mainProductList';
+import { useSavedItems } from '../contexts/SavedItemsContext';
 
 const NO_IMAGE_PLACEHOLDER = require('../assets/images/Screenshot 2025-12-11 121944.png');
 
@@ -46,6 +48,7 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
   promotions,
   onPriceUpdated,
 }) => {
+  const { saveSpecificProduct, removeItem, isProductSaved } = useSavedItems();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(true);
   const [isImagePlaceholder, setIsImagePlaceholder] = useState(false);
@@ -501,6 +504,22 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                 const isProductType = !isPromo;
                 const previousPrice = getPreviousPrice(product);
 
+                // Check if this specific product is saved
+                const productIsSaved = isProductSaved(product.id, storeName);
+
+                const handleBookmarkPress = async () => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  try {
+                    if (productIsSaved) {
+                      await removeItem(`${product.id}_${storeName}`);
+                    } else {
+                      await saveSpecificProduct(product, promotions);
+                    }
+                  } catch (error) {
+                    console.error('Error toggling bookmark:', error);
+                  }
+                };
+
                 return (
                   <View
                     key={`store-${index}`}
@@ -534,6 +553,18 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                             <Text style={styles.promoBadgeText}>PROMO</Text>
                           </View>
                         )}
+                        {/* Bookmark Button */}
+                        <TouchableOpacity
+                          style={styles.modalBookmarkButton}
+                          onPress={handleBookmarkPress}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <MaterialIcons
+                            name={productIsSaved ? 'bookmark' : 'bookmark-border'}
+                            size={24}
+                            color={productIsSaved ? '#10B981' : colors.text}
+                          />
+                        </TouchableOpacity>
                       </View>
                       <View style={styles.priceColumn}>
                         {hasPromo && originalPrice !== displayPrice && (
@@ -895,6 +926,10 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  modalBookmarkButton: {
+    marginLeft: 8,
+    padding: 4,
   },
   priceColumn: {
     alignItems: 'flex-end',

@@ -10,6 +10,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import DataCacheService from '../services/DataCacheService';
+import { SavedItemsProvider } from '../contexts/SavedItemsContext';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -261,13 +262,15 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-        <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-      </ThemeProvider>
+      <SavedItemsProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        </ThemeProvider>
+      </SavedItemsProvider>
     </View>
   );
 }

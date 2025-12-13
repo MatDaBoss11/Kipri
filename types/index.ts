@@ -30,3 +30,14 @@ export enum AppMode {
   ADD = 'add',
   UPDATE = 'update'
 }
+
+export interface SavedItem {
+  id: string;                    // Format: "productId_storeName"
+  productId: string;
+  productName: string;
+  size?: string;
+  price: number;
+  store: string;
+  category?: string;
+  savedAt: string;               // ISO timestamp
+}

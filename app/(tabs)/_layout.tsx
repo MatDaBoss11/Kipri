@@ -126,6 +126,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="shoppinglist"
+        options={{
+          title: 'Shopping List',
+          tabBarIcon: ({ color, focused }) => (
+            <IconSymbol
+              size={32}
+              name="bookmark.fill"
+              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
+            />
+          ),
+          tabBarLabel: () => null,
+        }}
+      />
+      <Tabs.Screen
         name="scanner"
         options={{
           title: 'Scanner',

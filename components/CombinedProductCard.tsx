@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import {
   ActivityIndicator,
@@ -9,8 +10,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Product, Promotion } from '../types';
 import { findPromotionForProduct } from '../constants/mainProductList';
+import { useSavedItems } from '../contexts/SavedItemsContext';
 
 const { width } = Dimensions.get('window');
 
@@ -52,6 +55,35 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
   promotions = [],
 }) => {
   const { name, size, products } = combinedProduct;
+  const { saveLowestPriceProduct, removeItem, isProductSaved } = useSavedItems();
+
+  // Check if any product from this combined product is saved
+  const getSavedProductInfo = (): { isSaved: boolean; savedId: string | null } => {
+    for (const product of products) {
+      const store = 'store' in product ? product.store : product.store_name;
+      if (isProductSaved(product.id, store)) {
+        return { isSaved: true, savedId: `${product.id}_${store}` };
+      }
+    }
+    return { isSaved: false, savedId: null };
+  };
+
+  const { isSaved, savedId } = getSavedProductInfo();
+
+  const handleBookmarkPress = async (event: any) => {
+    event.stopPropagation();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      if (isSaved && savedId) {
+        await removeItem(savedId);
+      } else {
+        await saveLowestPriceProduct(combinedProduct, promotions);
+      }
+    } catch (error) {
+      console.error('Error toggling bookmark:', error);
+    }
+  };
 
   const getStoreName = (item: Product | Promotion): string => {
     return 'store' in item ? item.store : item.store_name;
@@ -127,6 +159,19 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
       onPress={onPress}
       activeOpacity={0.7}
     >
+      {/* Bookmark Icon */}
+      <TouchableOpacity
+        style={styles.bookmarkButton}
+        onPress={handleBookmarkPress}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <MaterialIcons
+          name={isSaved ? 'bookmark' : 'bookmark-border'}
+          size={24}
+          color={isSaved ? '#10B981' : colors.text}
+        />
+      </TouchableOpacity>
+
       {/* Image Section */}
       <View style={styles.imageSection}>
         {imageLoading ? (
@@ -247,6 +292,16 @@ const styles = StyleSheet.create({
     elevation: 4, // Reduced elevation
     overflow: 'hidden',
     height: 160, // Match image height
+    position: 'relative',
+  },
+  bookmarkButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    padding: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
   },
   imageSection: {
     width: 160, // Larger square image

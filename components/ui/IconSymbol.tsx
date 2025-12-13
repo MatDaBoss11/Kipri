@@ -22,6 +22,8 @@ const MAPPING = {
   'bag.fill': 'shopping-bag',
   'qrcode': 'qr-code',
   'photo.camera.fill': 'photo-camera',
+  'bookmark.fill': 'bookmark',
+  'bookmark': 'bookmark-border',
 } as IconMapping;
 
 /**
