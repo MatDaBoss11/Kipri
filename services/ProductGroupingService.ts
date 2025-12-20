@@ -19,7 +19,7 @@ export interface CombinedProduct {
   id: string;
   name: string;
   size?: string;
-  category?: string;
+  categories?: string[];
   products: (Product | Promotion)[];
   primaryProduct: Product | Promotion;
   primaryImageProductId: string;
@@ -90,13 +90,14 @@ class ProductGroupingService {
     const categoryMap = new Map<string, (Product | Promotion)[]>();
 
     items.forEach(item => {
-      // Normalize category to lowercase for consistent grouping
-      const category = (this.getItemCategory(item) || 'miscellaneous').toLowerCase().trim();
+      // Get the first category from the categories array or use 'miscellaneous'
+      const categories = this.getItemCategories(item);
+      const primaryCategory = (categories && categories.length > 0 ? categories[0] : 'miscellaneous').toLowerCase().trim();
 
-      if (!categoryMap.has(category)) {
-        categoryMap.set(category, []);
+      if (!categoryMap.has(primaryCategory)) {
+        categoryMap.set(primaryCategory, []);
       }
-      categoryMap.get(category)!.push(item);
+      categoryMap.get(primaryCategory)!.push(item);
     });
 
     return categoryMap;
@@ -238,10 +239,11 @@ class ProductGroupingService {
   }
 
   private calculateSimilarityScore(item1: Product | Promotion, item2: Product | Promotion): number {
-    // Must be same category (case-insensitive comparison)
-    const cat1 = (this.getItemCategory(item1) || '').toLowerCase().trim();
-    const cat2 = (this.getItemCategory(item2) || '').toLowerCase().trim();
-    if (cat1 !== cat2) {
+    // Must share at least one category (case-insensitive comparison)
+    const cats1 = (this.getItemCategories(item1) || []).map(c => c.toLowerCase().trim());
+    const cats2 = (this.getItemCategories(item2) || []).map(c => c.toLowerCase().trim());
+    const hasSharedCategory = cats1.some(c => cats2.includes(c));
+    if (!hasSharedCategory) {
       return 0;
     }
 
@@ -252,7 +254,7 @@ class ProductGroupingService {
 
     // Calculate name similarity
     const nameSimilarity = this.calculateTextSimilarity(name1, name2);
-    
+
     // Calculate size similarity
     const sizeSimilarity = this.calculateSizeSimilarity(size1, size2);
 
@@ -523,8 +525,8 @@ class ProductGroupingService {
     return 'store' in item ? item.store : item.store_name;
   }
 
-  private getItemCategory(item: Product | Promotion): string | undefined {
-    return item.category;
+  private getItemCategories(item: Product | Promotion): string[] | undefined {
+    return item.categories;
   }
 
   // Get price level for styling
@@ -562,7 +564,7 @@ class ProductGroupingService {
       // Get name from primary product
       const name = this.getItemName(primaryProduct);
       const size = this.getItemSize(primaryProduct);
-      const category = this.getItemCategory(primaryProduct);
+      const categories = this.getItemCategories(primaryProduct);
 
       // Sort products by price (lowest first for display)
       const sortedByPrice = [...products].sort((a, b) => {
@@ -573,7 +575,7 @@ class ProductGroupingService {
         id: `combined_${group.id}_${index}`,
         name,
         size,
-        category,
+        categories,
         products: sortedByPrice,
         primaryProduct,
         primaryImageProductId: primaryProductId,

@@ -1,5 +1,6 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from '@supabase/supabase-js';
 import * as FileSystem from 'expo-file-system';
+import { supabase } from './AuthService';
 import { Product } from './GeminiApiService';
 
 export interface DatabaseProduct extends Product {
@@ -17,28 +18,10 @@ export interface QueryOptions {
 }
 
 class SupabaseService {
-  private supabase: SupabaseClient | null = null;
+  private supabase: SupabaseClient = supabase;
 
   constructor() {
-    this.initializeClient();
-  }
-
-  private initializeClient() {
-    try {
-      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-
-      if (!supabaseUrl || !supabaseKey) {
-        console.error('Supabase configuration missing');
-        return;
-      }
-
-      this.supabase = createClient(supabaseUrl, supabaseKey);
-      console.log('Supabase client initialized successfully');
-      
-    } catch (error) {
-      console.error('Failed to initialize Supabase client:', error);
-    }
+    // Shared client from AuthService is already initialized
   }
 
   async testConnection(): Promise<boolean> {
@@ -79,7 +62,7 @@ class SupabaseService {
         price: parseFloat(product.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0, // Convert to numeric
         size: product.size,
         store: product.store,
-        category: product.category,
+        categories: product.categories, // JSONB array of categories
         images: product.images,
         // created_at is handled by database default
       }));
@@ -114,7 +97,7 @@ class SupabaseService {
         price: parseFloat(product.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0, // Convert to numeric
         size: product.size,
         store: product.store,
-        category: product.category,
+        categories: product.categories, // JSONB array of categories
         images: product.images,
         // created_at is handled by database default
       };
@@ -222,7 +205,7 @@ class SupabaseService {
       if (updates.price !== undefined) updateData.price = parseFloat(updates.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0;
       if (updates.size !== undefined) updateData.size = updates.size;
       if (updates.store !== undefined) updateData.store = updates.store;
-      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.categories !== undefined) updateData.categories = updates.categories; // JSONB array
       if (updates.images !== undefined) updateData.images = updates.images;
 
       // Update created_at to current timestamp (used as "last updated")
@@ -281,10 +264,12 @@ class SupabaseService {
         throw new Error('Supabase client not initialized');
       }
 
+      // Note: For JSONB array search, we use the contains operator
+      // The search will match products where the product name or store contains the search term
       let query = this.supabase
         .from('products')
         .select('*')
-        .or(`product.ilike.%${searchTerm}%,category.ilike.%${searchTerm}%,store.ilike.%${searchTerm}%`);
+        .or(`product.ilike.%${searchTerm}%,store.ilike.%${searchTerm}%`);
 
       // Apply additional filters
       if (options.filters) {
@@ -321,10 +306,52 @@ class SupabaseService {
   }
 
   async getProductsByCategory(category: string, options: QueryOptions = {}): Promise<DatabaseProduct[] | null> {
-    return this.getProducts({
-      ...options,
-      filters: { ...options.filters, category },
-    });
+    try {
+      if (!this.supabase) {
+        throw new Error('Supabase client not initialized');
+      }
+
+      // Use JSONB contains operator to check if category is in the categories array
+      let query = this.supabase
+        .from('products')
+        .select('*')
+        .contains('categories', [category]);
+
+      // Apply additional filters
+      if (options.filters) {
+        Object.entries(options.filters).forEach(([key, value]) => {
+          if (value !== null && value !== undefined && key !== 'categories') {
+            query = query.eq(key, value);
+          }
+        });
+      }
+
+      // Apply ordering
+      if (options.orderBy) {
+        query = query.order(options.orderBy, { ascending: options.ascending ?? true });
+      }
+
+      // Apply pagination
+      if (options.limit) {
+        query = query.limit(options.limit);
+      }
+      if (options.offset) {
+        query = query.range(options.offset, options.offset + (options.limit || 10) - 1);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('Error fetching products by category from Supabase:', error);
+        return null;
+      }
+
+      return data as DatabaseProduct[];
+
+    } catch (error) {
+      console.error('Supabase get products by category error:', error);
+      return null;
+    }
   }
 
   // Analytics operations
@@ -439,49 +466,49 @@ class SupabaseService {
       // This is more reliable than fetch() for local file URIs
       try {
         console.log('Reading image with Expo FileSystem...');
-        
+
         // Read the image as base64
         const base64 = await FileSystem.readAsStringAsync(imageUri, {
           encoding: 'base64',
         });
-        
+
         console.log('Base64 data length:', base64.length);
-        
+
         if (!base64 || base64.length === 0) {
           console.error('Failed to read image as base64');
           return null;
         }
-        
+
         // Decode base64 string to Uint8Array
         const decodeBase64 = (base64String: string): Uint8Array => {
           const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
           let bufferLength = base64String.length * 0.75;
           let p = 0;
           let encoded1: number, encoded2: number, encoded3: number, encoded4: number;
-          
+
           if (base64String[base64String.length - 1] === '=') {
             bufferLength--;
             if (base64String[base64String.length - 2] === '=') {
               bufferLength--;
             }
           }
-          
+
           const bytes = new Uint8Array(bufferLength);
-          
+
           for (let i = 0; i < base64String.length; i += 4) {
             encoded1 = chars.indexOf(base64String[i]);
             encoded2 = chars.indexOf(base64String[i + 1]);
             encoded3 = chars.indexOf(base64String[i + 2]);
             encoded4 = chars.indexOf(base64String[i + 3]);
-            
+
             bytes[p++] = (encoded1 << 2) | (encoded2 >> 4);
             if (encoded3 !== 64) bytes[p++] = ((encoded2 & 15) << 4) | (encoded3 >> 2);
             if (encoded4 !== 64) bytes[p++] = ((encoded3 & 3) << 6) | encoded4;
           }
-          
+
           return bytes;
         };
-        
+
         // Try to decode the base64 string
         let uint8Array: Uint8Array;
         try {
@@ -491,20 +518,20 @@ class SupabaseService {
           console.error('Failed to decode base64:', decodeError);
           return null;
         }
-        
+
         // Create a blob from the Uint8Array
         const blob = new Blob([uint8Array.buffer as ArrayBuffer], { type: 'image/jpeg' });
         console.log('Created blob size:', blob.size, 'bytes');
-        
+
         if (blob.size === 0) {
           console.error('Blob is empty after conversion');
           return null;
         }
-        
+
         // Upload the blob to Supabase
         const fileName = `${productId}.jpg`;
         const filePath = fileName;
-        
+
         console.log('Uploading blob to Supabase...');
         const { data, error } = await this.supabase.storage
           .from('product-images')
@@ -512,10 +539,10 @@ class SupabaseService {
             contentType: 'image/jpeg',
             upsert: true
           });
-        
+
         if (error) {
           console.error('Error uploading image to Supabase storage:', error);
-          
+
           // Try alternative: upload base64 directly using decode function
           console.log('Trying alternative upload method...');
           const { data: altData, error: altError } = await this.supabase.storage
@@ -524,19 +551,19 @@ class SupabaseService {
               contentType: 'image/jpeg',
               upsert: true
             });
-          
+
           if (altError) {
             console.error('Alternative upload also failed:', altError);
             return null;
           }
-          
+
           console.log('Successfully uploaded via alternative method:', altData.path);
           return altData.path;
         }
-        
+
         console.log('Successfully uploaded image:', data.path);
         return data.path;
-        
+
       } catch (error) {
         console.error('Error processing image:', error);
         return null;

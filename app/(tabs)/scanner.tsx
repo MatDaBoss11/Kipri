@@ -432,7 +432,7 @@ const ScannerScreen = () => {
         price: price.trim(),
         size: size.trim(),
         store: selectedStore,
-        category: selectedCategories[0] || 'miscellaneous',
+        categories: selectedCategories.length > 0 ? selectedCategories : ['miscellaneous'],
         imageSource: productImage || undefined, // Image URI for upload
         timestamp: new Date().toISOString(),
       };
@@ -472,7 +472,7 @@ const ScannerScreen = () => {
           price: price.trim(),
           size: size.trim(),
           store: selectedStore,
-          category: selectedCategories[0] || 'miscellaneous',
+          categories: selectedCategories.length > 0 ? selectedCategories : ['miscellaneous'],
           imageSource: productImage || undefined, // Image URI for upload
           created_at: new Date().toISOString(), // Use created_at as update timestamp
         };
@@ -547,11 +547,11 @@ const ScannerScreen = () => {
   const toggleCategory = (categoryName: string) => {
     setSelectedCategories(prev => {
       if (prev.includes(categoryName)) {
-        // If already selected, deselect it (single select)
-        return [];
+        // If already selected, deselect it
+        return prev.filter(c => c !== categoryName);
       } else {
-        // Select this category and deselect all others (single select)
-        return [categoryName];
+        // Add this category to the selection (multi-select)
+        return [...prev, categoryName];
       }
     });
   };
@@ -735,7 +735,7 @@ const ScannerScreen = () => {
 
           <View style={[styles.inputGroup, styles.categoriesInputGroup]}>
             <View style={styles.categoriesHeader}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Categories</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>Categories (select one or more)</Text>
             </View>
 
             <View style={styles.categoriesContainer}>

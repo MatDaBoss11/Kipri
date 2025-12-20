@@ -51,9 +51,16 @@ const ShoppingListScreen = () => {
         }
       }
 
-      // Category filter
+      // Category filter - check if any selected category is in the item's categories array
       if (selectedCategories.length > 0) {
-        if (!item.category || !selectedCategories.includes(item.category.toLowerCase())) {
+        if (!item.categories || item.categories.length === 0) {
+          return false;
+        }
+        const itemCategoriesLower = item.categories.map(c => c.toLowerCase());
+        const hasMatchingCategory = selectedCategories.some(selected =>
+          itemCategoriesLower.includes(selected.toLowerCase())
+        );
+        if (!hasMatchingCategory) {
           return false;
         }
       }

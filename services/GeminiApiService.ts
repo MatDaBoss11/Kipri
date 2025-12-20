@@ -5,7 +5,7 @@ export interface Product {
   price: string; // Will be converted to numeric(6,2) for database
   size: string; // Required field
   store: string; // Required field
-  category?: string;
+  categories?: string[]; // Array of categories (stored as JSONB in database)
   images?: string;
   created_at?: string; // Database field
   unitPrice?: string; // Not in database, kept for compatibility
@@ -104,7 +104,7 @@ class GeminiApiService {
         size: productData.size || 'N/A',
         store: productData.store || 'Unknown Store', // Required field
         unitPrice: productData.unit_price,
-        category: productData.category,
+        categories: productData.category ? [productData.category] : undefined,
         discount: productData.discount,
         rawText: rawText,
         timestamp: new Date().toISOString(),
@@ -217,9 +217,12 @@ class GeminiApiService {
                       product.product.toLowerCase().includes(cp.product.toLowerCase())
         );
 
+        const newCategory = categorized?.category || 'Other';
+        const existingCategories = product.categories || [];
+
         return {
           ...product,
-          category: categorized?.category || product.category || 'Other'
+          categories: existingCategories.length > 0 ? existingCategories : [newCategory]
         };
       });
 

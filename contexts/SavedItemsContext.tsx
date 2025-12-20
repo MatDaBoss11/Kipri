@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { Product, Promotion, SavedItem } from '../types';
-import ShoppingListService from '../services/ShoppingListService';
-import { findPromotionForProduct } from '../constants/mainProductList';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { CombinedProduct } from '../components/CombinedProductCard';
+import { findPromotionForProduct } from '../constants/mainProductList';
+import ShoppingListService from '../services/ShoppingListService';
+import { Product, Promotion, SavedItem } from '../types';
 
 interface SavedItemsContextType {
   savedItems: SavedItem[];
@@ -37,8 +37,18 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   useEffect(() => {
+    // 1. Initial load
     loadItems();
-  }, [loadItems]);
+
+    // 2. Subscribe to service updates (e.g. from cloud sync)
+    const unsubscribe = shoppingListService.subscribe(() => {
+      console.log('[SavedItemsContext] Shopping list updated via service event');
+      const items = shoppingListService.getCachedItems();
+      setSavedItems([...items]);
+    });
+
+    return () => unsubscribe();
+  }, [loadItems, shoppingListService]);
 
   const getStoreName = (item: Product | Promotion): string => {
     return 'store' in item ? item.store : item.store_name;
@@ -89,7 +99,7 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         size: combinedProduct.size,
         price: lowestPrice,
         store: store,
-        category: combinedProduct.category,
+        categories: combinedProduct.categories,
         savedAt: new Date().toISOString(),
       };
 
@@ -115,7 +125,7 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         size: 'size' in product ? product.size : undefined,
         price: effectivePrice,
         store: store,
-        category: 'category' in product ? product.category : undefined,
+        categories: 'categories' in product ? product.categories : undefined,
         savedAt: new Date().toISOString(),
       };
 

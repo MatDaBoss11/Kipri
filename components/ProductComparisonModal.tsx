@@ -141,7 +141,7 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
 
   if (!combinedProduct) return null;
 
-  const { name, size, category, products } = combinedProduct;
+  const { name, size, categories, products } = combinedProduct;
 
   const getStoreName = (item: Product | Promotion): string => {
     return 'store' in item ? item.store : item.store_name;
@@ -463,10 +463,16 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                 </View>
               )}
 
-              {category && (
+              {categories && categories.length > 0 && (
                 <View style={[styles.infoRow, { backgroundColor: colors.background }]}>
-                  <Text style={[styles.infoLabel, { color: colors.text }]}>Category</Text>
-                  <Text style={[styles.infoValue, { color: colors.text }]}>{category}</Text>
+                  <Text style={[styles.infoLabel, { color: colors.text }]}>
+                    {categories.length > 1 ? 'Categories' : 'Category'}
+                  </Text>
+                  <Text style={[styles.infoValue, { color: colors.text }]}>
+                    {categories.map(cat =>
+                      cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase()
+                    ).join(', ')}
+                  </Text>
                 </View>
               )}
 
@@ -569,12 +575,12 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                       <View style={styles.priceColumn}>
                         {hasPromo && originalPrice !== displayPrice && (
                           <Text style={[styles.previousPriceLarge, { color: colors.error }]}>
-                            Rs {formatPrice(originalPrice)}
+                            {formatPrice(originalPrice)}
                           </Text>
                         )}
                         {isPromo && previousPrice && !hasPromo && (
                           <Text style={[styles.previousPriceLarge, { color: colors.error }]}>
-                            Rs {formatPrice(previousPrice)}
+                            {formatPrice(previousPrice)}
                           </Text>
                         )}
                         <Text

@@ -29,7 +29,7 @@ export interface CombinedProduct {
   id: string;
   name: string;
   size?: string;
-  category?: string;
+  categories?: string[];
   products: (Product | Promotion)[];
   primaryProduct: Product | Promotion;
   primaryImageProductId: string;
@@ -251,7 +251,7 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
                 <View style={styles.priceContainer}>
                   {hasPromo && originalPrice !== displayPrice && (
                     <Text style={[styles.previousPrice, { color: colors.error }]}>
-                      Rs {formatPrice(originalPrice)}
+                      {formatPrice(originalPrice)}
                     </Text>
                   )}
                   <Text

@@ -1,16 +1,20 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useCallback, useState } from 'react';
-import { View, Text, StyleSheet, Animated, ActivityIndicator, Image } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Image, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
-import DataCacheService from '../services/DataCacheService';
+import { useColorScheme } from '@/hooks/useColorScheme';
+import AuthScreen from '../components/AuthScreen';
+import { AppDataProvider } from '../contexts/AppDataContext';
 import { SavedItemsProvider } from '../contexts/SavedItemsContext';
+import AuthService from '../services/AuthService';
+import DataCacheService from '../services/DataCacheService';
+import ShoppingListService from '../services/ShoppingListService';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -46,7 +50,11 @@ const KIPRI_RED_DARK = '#B82318';
 const KIPRI_RED_LIGHT = '#E53935';
 
 // Kipri Loading Screen Component
-function KipriLoadingScreen() {
+interface KipriLoadingScreenProps {
+  loadingMessage?: string;
+}
+
+function KipriLoadingScreen({ loadingMessage = 'Loading your savings...' }: KipriLoadingScreenProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -137,7 +145,7 @@ function KipriLoadingScreen() {
             { color: textColor, opacity: shimmerOpacity }
           ]}
         >
-          Loading your savings...
+          {loadingMessage}
         </Animated.Text>
       </Animated.View>
     </View>
@@ -206,21 +214,71 @@ const loadingStyles = StyleSheet.create({
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [appIsReady, setAppIsReady] = useState(false);
+  const [dataIsReady, setDataIsReady] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Loading your savings...');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const startTimeRef = useRef<number>(Date.now());
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
 
-  // Prepare app resources
+  // Handle when data is ready - enforce minimum 3 second splash
+  const handleDataReady = useCallback(async () => {
+    const elapsed = Date.now() - startTimeRef.current;
+    const MIN_SPLASH_TIME = 3000; // 3 seconds minimum
+
+    if (elapsed < MIN_SPLASH_TIME) {
+      // Wait remaining time to ensure at least 3 seconds total
+      const remainingTime = MIN_SPLASH_TIME - elapsed;
+      console.log(`[RootLayout] Data ready in ${elapsed}ms, waiting additional ${remainingTime}ms`);
+      await new Promise(resolve => setTimeout(resolve, remainingTime));
+    }
+
+    console.log('[RootLayout] Data preload complete, app is now ready');
+    setDataIsReady(true);
+  }, []);
+
+  // Check authentication session on start
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const user = await AuthService.getCurrentUser();
+        setIsAuthenticated(!!user);
+
+        // If authenticated, pre-load their cloud wishlist
+        if (user) {
+          console.log('[RootLayout] User authenticated, syncing wishlist...');
+          await ShoppingListService.getInstance().loadItems();
+        }
+      } catch (e) {
+        console.error('[RootLayout] Auth check error:', e);
+        setIsAuthenticated(false);
+      }
+    }
+
+    if (appIsReady) {
+      checkAuth();
+    }
+  }, [appIsReady]);
+
+  // Handle successful authentication
+  const handleAuthSuccess = useCallback(async () => {
+    setIsAuthenticated(true);
+    // Refresh items to pull from cloud
+    await ShoppingListService.getInstance().loadItems();
+  }, []);
+
+  // Prepare app resources (fonts only - data is loaded by AppDataProvider)
   useEffect(() => {
     async function prepare() {
       try {
-        // Add any additional initialization here (pre-loading data, etc.)
-        // Artificially delay for a smoother transition from native splash
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Record start time for minimum splash duration
+        startTimeRef.current = Date.now();
+        console.log('[RootLayout] Starting app preparation...');
       } catch (e) {
         console.warn('Error during app initialization:', e);
       } finally {
-        // Tell the app we're ready
+        // Fonts are loaded, mark app as ready to show custom splash
         setAppIsReady(true);
       }
     }
@@ -247,30 +305,52 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Hide the native splash screen once fonts are loaded
+  // Hide the native splash screen once data is ready
   const onLayoutRootView = useCallback(async () => {
-    if (appIsReady) {
+    if (dataIsReady) {
       // This tells the splash screen to hide immediately
       await SplashScreen.hideAsync();
     }
-  }, [appIsReady]);
+  }, [dataIsReady]);
 
-  // Show the custom loading screen while loading
+  // Show the custom loading screen while fonts are loading
   if (!loaded || !appIsReady) {
-    return <KipriLoadingScreen />;
+    return <KipriLoadingScreen loadingMessage={loadingMessage} />;
+  }
+
+  // Show the custom loading screen while data is preloading
+  if (!dataIsReady) {
+    return (
+      <AppDataProvider
+        onReady={handleDataReady}
+        onLoadingMessage={setLoadingMessage}
+      >
+        <KipriLoadingScreen loadingMessage={loadingMessage} />
+      </AppDataProvider>
+    );
   }
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <SavedItemsProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        </ThemeProvider>
-      </SavedItemsProvider>
+      <AppDataProvider>
+        <SavedItemsProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
+            {isAuthenticated === null ? (
+              <KipriLoadingScreen loadingMessage="Checking session..." />
+            ) : !isAuthenticated ? (
+              <AuthScreen onAuthSuccess={handleAuthSuccess} />
+            ) : (
+              <>
+                <Stack>
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  <Stack.Screen name="+not-found" />
+                </Stack>
+                <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+              </>
+            )}
+          </ThemeProvider>
+        </SavedItemsProvider>
+      </AppDataProvider>
     </View>
   );
 }

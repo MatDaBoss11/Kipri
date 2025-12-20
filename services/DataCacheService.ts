@@ -6,7 +6,7 @@ interface Product {
   size?: string;
   price: number;
   store: string;
-  category?: string;
+  categories?: string[];
   images?: string;
   created_at: string;
 }
@@ -18,7 +18,7 @@ interface Promotion {
   previous_price?: number;
   size?: string;
   store_name: string;
-  category?: string;
+  categories?: string[];
   timestamp: string;
   isPromotion: boolean;
 }
@@ -152,12 +152,19 @@ class DataCacheService {
 
       if (data) {
         for (const item of data) {
-          const category = item.categories || item.category;
+          // Handle both old 'category' field and new 'categories' JSONB array
+          let categories: string[] | undefined;
+          if (item.categories && Array.isArray(item.categories)) {
+            categories = item.categories;
+          } else if (item.category) {
+            categories = [item.category];
+          }
+
           allPromotions.push({
             ...item,
             store_name: storeName,
             isPromotion: true,
-            category: category // Keep original case, filtering will handle normalization
+            categories: categories // Array of categories
           });
         }
       }
@@ -247,6 +254,49 @@ class DataCacheService {
     console.log('🛠️ Developer command: Clearing all cache...');
     await this.invalidateCache();
     console.log('✅ Developer cache clear completed successfully');
+  }
+
+  /**
+   * Fetch all data at once for preloading during splash screen
+   * This method forces a refresh to ensure fresh data on app startup
+   */
+  public async preloadAllData(): Promise<{ products: Product[]; promotions: Promotion[] }> {
+    console.log('🚀 Preloading all data...');
+    const [products, promotions] = await Promise.all([
+      this.getProducts(true),
+      this.getPromotions(true)
+    ]);
+    console.log(`✅ Preloaded ${products.length} products and ${promotions.length} promotions`);
+    return { products, promotions };
+  }
+
+  /**
+   * Preload all image URLs in parallel with batching to avoid overwhelming the network
+   * @param productIds Array of product IDs to preload image URLs for
+   * @returns Object mapping product IDs to their image URLs
+   */
+  public async preloadAllImageUrls(productIds: string[]): Promise<{ [key: string]: string | null }> {
+    console.log(`🖼️ Preloading ${productIds.length} image URLs...`);
+    const imageUrls: { [key: string]: string | null } = {};
+    const batchSize = 10;
+
+    for (let i = 0; i < productIds.length; i += batchSize) {
+      const batch = productIds.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (id) => ({
+          id,
+          url: await this.getSignedImageUrl(id)
+        }))
+      );
+      results.forEach(r => { imageUrls[r.id] = r.url; });
+
+      // Log progress for debugging
+      const progress = Math.min(i + batchSize, productIds.length);
+      console.log(`📸 Image URL progress: ${progress}/${productIds.length}`);
+    }
+
+    console.log(`✅ Preloaded ${Object.keys(imageUrls).length} image URLs`);
+    return imageUrls;
   }
 }
 

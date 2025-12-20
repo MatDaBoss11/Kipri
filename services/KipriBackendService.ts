@@ -115,14 +115,21 @@ class KipriBackendService {
       if (this.serviceStatus.openai_categorization && products.length > 0) {
         console.log('Step 4: Enhancing categories with OpenAI...');
         try {
-          const productTexts = products.map(p => `${p.product} ${p.category || ''}`.trim());
+          const productTexts = products.map(p => {
+            const existingCategories = p.categories?.join(' ') || '';
+            return `${p.product} ${existingCategories}`.trim();
+          });
           const categoryResults = await OpenAiService.batchCategorizeTexts(productTexts);
 
           // Update products with OpenAI categorization
           products.forEach((product, index) => {
             const categoryResult = categoryResults[index];
             if (categoryResult && categoryResult.isFood && categoryResult.confidence > 0.7) {
-              product.category = categoryResult.category;
+              // Add the category to the categories array if not already present
+              const existingCategories = product.categories || [];
+              if (!existingCategories.includes(categoryResult.category)) {
+                product.categories = [...existingCategories, categoryResult.category];
+              }
             }
           });
         } catch (error) {

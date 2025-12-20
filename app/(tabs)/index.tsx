@@ -2,8 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,11 +18,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORIES } from '../../constants/categories';
-import DataCacheService from '../../services/DataCacheService';
-import ProductGroupingService, { ProductGroup, CombinedProduct } from '../../services/ProductGroupingService';
-import { Product, Promotion } from '../../types';
+import { CombinedProduct } from '../../services/ProductGroupingService';
 import CombinedProductCard from '../../components/CombinedProductCard';
 import ProductComparisonModal from '../../components/ProductComparisonModal';
+import { useAppData } from '../../contexts/AppDataContext';
 
 const { width } = Dimensions.get('window');
 
@@ -31,125 +29,62 @@ const PricesScreen = () => {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const [products, setProducts] = useState<Product[]>([]);
-  const [promotions, setPromotions] = useState<Promotion[]>([]);
-  const [combinedProducts, setCombinedProducts] = useState<CombinedProduct[]>([]);
+
+  // Use preloaded data from AppDataContext
+  const {
+    combinedProducts: allCombinedProducts,
+    imageUrls: preloadedImageUrls,
+    promotions,
+    isLoading,
+    refresh
+  } = useAppData();
+
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCombinedProduct, setSelectedCombinedProduct] = useState<CombinedProduct | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [imageUrls, setImageUrls] = useState<{ [key: string]: { url: string | null; loading: boolean } }>({});
 
-  const cacheService = DataCacheService.getInstance();
-  const groupingService = ProductGroupingService.getInstance();
+  // Filter combined products by category and search text
+  const combinedProducts = useMemo(() => {
+    let filtered = allCombinedProducts;
 
-  const fetchData = React.useCallback(async () => {
-    try {
-      setIsLoading(true);
-
-      // Check cached data first
-      if (cacheService.isProductsCacheValid && cacheService.cachedProducts) {
-        setProducts(cacheService.cachedProducts);
-        setIsLoading(false);
-        console.log('Displayed cached data immediately');
-      }
-
-      if (cacheService.isPromotionsCacheValid && cacheService.cachedPromotions) {
-        setPromotions(cacheService.cachedPromotions);
-      }
-
-      // Fetch fresh data
-      const [fetchedProducts, fetchedPromotions] = await Promise.all([
-        cacheService.getProducts(),
-        cacheService.getPromotions()
-      ]);
-
-      setProducts(fetchedProducts);
-      setPromotions(fetchedPromotions);
-
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      Alert.alert('Error', 'Failed to load data. Please check your connection and try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [cacheService]);
-
-  const processProducts = React.useCallback(() => {
-    // Filter products by category
-    let filteredItems: (Product | Promotion)[] = [...products];
-
+    // Filter by category - check if selected category is in the categories array
     if (selectedCategory) {
-      filteredItems = filteredItems.filter(item => {
-        const itemCategory = (item as Product).category || (item as Promotion).category;
-        return itemCategory?.toLowerCase() === selectedCategory.toLowerCase();
-      });
+      filtered = filtered.filter(cp =>
+        cp.products.some(p => {
+          // Handle new categories array format
+          const itemCategories = 'categories' in p ? p.categories : undefined;
+          if (itemCategories && Array.isArray(itemCategories)) {
+            return itemCategories.some(cat =>
+              cat?.toLowerCase() === selectedCategory.toLowerCase()
+            );
+          }
+          return false;
+        })
+      );
     }
 
-    // Group the filtered items using the grouping service
-    const groups = groupingService.groupProducts(filteredItems);
+    return filtered;
+  }, [allCombinedProducts, selectedCategory]);
 
-    // Convert groups to combined products
-    const combined = groupingService.createCombinedProducts(groups);
-    setCombinedProducts(combined);
-
-    // Load images for each combined product
-    loadImagesForProducts(combined);
-  }, [products, selectedCategory, groupingService]);
-
-  const loadImagesForProducts = async (combined: CombinedProduct[]) => {
-    const newImageUrls: { [key: string]: { url: string | null; loading: boolean } } = {};
-
-    // Initialize loading state
-    combined.forEach(cp => {
-      newImageUrls[cp.id] = { url: null, loading: true };
-    });
-    setImageUrls(newImageUrls);
-
-    // Load images in parallel
-    const imagePromises = combined.map(async (cp) => {
-      try {
-        const url = await cacheService.getSignedImageUrl(cp.primaryImageProductId, true);
-        return { id: cp.id, url, loading: false };
-      } catch (error) {
-        console.error('Error loading image for', cp.id, error);
-        return { id: cp.id, url: null, loading: false };
-      }
-    });
-
-    const results = await Promise.all(imagePromises);
-
-    const finalUrls: { [key: string]: { url: string | null; loading: boolean } } = {};
-    results.forEach(result => {
-      finalUrls[result.id] = { url: result.url, loading: result.loading };
-    });
-    setImageUrls(finalUrls);
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    processProducts();
-  }, [processProducts]);
-
-  // Re-fetch data when screen gains focus
-  useFocusEffect(
-    useCallback(() => {
-      if (!cacheService.isProductsCacheValid) {
-        console.log('Cache invalidated - re-fetching products on focus');
-        fetchData();
-      }
-    }, [cacheService, fetchData])
-  );
+  // Generate status message based on filters
+  const statusMessage = useMemo(() => {
+    if (selectedCategory) {
+      return `Category: ${selectedCategory}`;
+    }
+    return 'Showing all products';
+  }, [selectedCategory]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchData();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleRefreshData = async () => {
@@ -157,19 +92,12 @@ const PricesScreen = () => {
       setIsRefreshing(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Force refresh all data by bypassing cache
-      await Promise.all([
-        cacheService.getProducts(true),
-        cacheService.getPromotions(true)
-      ]);
-
-      // Refresh the UI data
-      await fetchData();
+      await refresh();
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
       console.error('Error refreshing data:', error);
-      Alert.alert('Error', 'Failed to refresh data. Please check your connection and try again.');
+      Alert.alert('Error', 'Failed to refresh data. Please check your connection.');
     } finally {
       setIsRefreshing(false);
     }
@@ -193,11 +121,12 @@ const PricesScreen = () => {
 
   const handlePriceUpdated = () => {
     // Refresh data after price update
-    fetchData();
+    refresh();
   };
 
   const renderCombinedProductCard = ({ item }: { item: CombinedProduct }) => {
-    const imageData = imageUrls[item.id] || { url: null, loading: true };
+    // Use preloaded image URLs from context
+    const imageUrl = preloadedImageUrls[item.primaryImageProductId] || null;
 
     return (
       <CombinedProductCard
@@ -205,8 +134,8 @@ const PricesScreen = () => {
         onPress={() => showProductDetails(item)}
         colors={colors}
         colorScheme={colorScheme}
-        imageUrl={imageData.url}
-        imageLoading={imageData.loading}
+        imageUrl={imageUrl}
+        imageLoading={false}
         promotions={promotions}
       />
     );
@@ -269,7 +198,7 @@ const PricesScreen = () => {
         {/* Status Message */}
         <View style={[styles.statusContainer, { backgroundColor: colors.primary + '30', borderColor: colors.primary + '30' }]}>
           <Text style={[styles.statusText, { color: colors.text }]}>
-            {selectedCategory ? `Category: ${selectedCategory}` : 'Showing all products'}
+            {statusMessage}
           </Text>
           <View style={[styles.countBadge, { backgroundColor: colors.primary }]}>
             <Text style={styles.countText}>{combinedProducts.length} products</Text>
@@ -292,7 +221,9 @@ const PricesScreen = () => {
           </View>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No products found</Text>
           <Text style={[styles.emptySubtitle, { color: colors.text }]}>
-            {selectedCategory ? 'Try selecting a different category' : 'Pull down to refresh and check for new deals'}
+            {selectedCategory
+              ? 'Try selecting a different category'
+              : 'Pull down to refresh and check for new deals'}
           </Text>
         </View>
       ) : (
@@ -419,6 +350,7 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     fontWeight: '600',
+    flex: 1,
   },
   countBadge: {
     paddingHorizontal: 8,

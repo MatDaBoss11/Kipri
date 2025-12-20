@@ -4,7 +4,7 @@ export interface Product {
   size?: string;
   price: number;
   store: string;
-  category?: string;
+  categories?: string[];
   created_at: string;
 }
 
@@ -15,7 +15,7 @@ export interface Promotion {
   previous_price?: number;
   size?: string;
   store_name: string;
-  category?: string;
+  categories?: string[];
   timestamp: string;
   isPromotion: boolean;
 }
@@ -38,6 +38,6 @@ export interface SavedItem {
   size?: string;
   price: number;
   store: string;
-  category?: string;
+  categories?: string[];
   savedAt: string;               // ISO timestamp
 }

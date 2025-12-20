@@ -65,9 +65,11 @@ const SavedItemCard: React.FC<SavedItemCardProps> = ({
             <Text style={[styles.storeText, { color: storeColor }]}>
               {item.store}
             </Text>
-            {item.category && (
+            {item.categories && item.categories.length > 0 && (
               <Text style={[styles.categoryText, { color: colors.text }]}>
-                {item.category}
+                {item.categories.map(cat =>
+                  cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase()
+                ).join(', ')}
               </Text>
             )}
           </View>

@@ -3,10 +3,9 @@ import { useColorScheme } from '@/hooks/useColorScheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     Animated,
     Platform,
     Pressable,
@@ -20,14 +19,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { STORE_INFO } from '../../constants/categories';
 import { filterPromotionsByMainList } from '../../constants/mainProductList';
-import DataCacheService from '../../services/DataCacheService';
 import { Promotion } from '../../types';
+import { useAppData } from '../../contexts/AppDataContext';
 
 
 const PromotionsScreen = () => {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+
+  // Use preloaded promotions from AppDataContext
+  const { promotions: allPromotions, isLoading: contextLoading, refresh } = useAppData();
 
   // Helper function to convert hex to rgba
   const hexToRgba = (hex: string, opacity: number) => {
@@ -39,16 +41,11 @@ const PromotionsScreen = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  const [promotions, setPromotions] = useState<Promotion[]>([]);
-  const [filteredPromotions, setFilteredPromotions] = useState<Promotion[]>([]);
   const [selectedStore, setSelectedStore] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [categories, setCategories] = useState<string[]>(['All']);
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showStoreSelection, setShowStoreSelection] = useState(true);
-
-  const cacheService = DataCacheService.getInstance();
+  const [isLoading, setIsLoading] = useState(false);
 
   const startAnimations = React.useCallback(() => {
     Animated.parallel([
@@ -65,68 +62,64 @@ const PromotionsScreen = () => {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
-  const fetchPromotions = React.useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const allPromotions = await cacheService.getPromotions();
+  // Filter promotions based on selected store using preloaded data
+  const promotions = useMemo(() => {
+    if (!selectedStore || showStoreSelection) return [];
 
-      let filtered: Promotion[];
+    let filtered: Promotion[];
 
-      if (selectedStore === 'Tous Les Produits') {
-        // For "All Products" view, filter to only show products from the main product list
-        // This filtering happens AFTER receiving data from the database
-        filtered = filterPromotionsByMainList(allPromotions);
-        console.log(`Filtered promotions: ${filtered.length} out of ${allPromotions.length} match main product list`);
-      } else {
-        // For specific store view, also filter by main product list
-        const storeFiltered = allPromotions.filter(item => item.store_name === selectedStore);
-        filtered = filterPromotionsByMainList(storeFiltered);
-        console.log(`Store "${selectedStore}": ${filtered.length} out of ${storeFiltered.length} match main product list`);
-      }
-
-      setPromotions(filtered);
-
-      // Extract categories (normalize case)
-      const categorySet = new Set(['All']);
-      filtered.forEach(item => {
-        if (item.category) {
-          // Capitalize first letter and lowercase the rest for consistent display
-          const normalizedCategory = item.category.charAt(0).toUpperCase() + item.category.slice(1).toLowerCase();
-          categorySet.add(normalizedCategory);
-        }
-      });
-      setCategories(Array.from(categorySet));
-
-    } catch (error) {
-      console.error('Error fetching promotions:', error);
-      Alert.alert('Error', 'Failed to load promotions. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [cacheService, selectedStore]);
-
-  const filterPromotions = React.useCallback(() => {
-    if (selectedCategory === 'All') {
-      setFilteredPromotions(promotions);
+    if (selectedStore === 'Tous Les Produits') {
+      // For "All Products" view, filter to only show products from the main product list
+      filtered = filterPromotionsByMainList(allPromotions);
+      console.log(`Filtered promotions: ${filtered.length} out of ${allPromotions.length} match main product list`);
     } else {
-      setFilteredPromotions(promotions.filter(item => item.category?.toLowerCase() === selectedCategory.toLowerCase()));
+      // For specific store view, also filter by main product list
+      const storeFiltered = allPromotions.filter(item => item.store_name === selectedStore);
+      filtered = filterPromotionsByMainList(storeFiltered);
+      console.log(`Store "${selectedStore}": ${filtered.length} out of ${storeFiltered.length} match main product list`);
     }
+
+    return filtered;
+  }, [allPromotions, selectedStore, showStoreSelection]);
+
+  // Extract categories from filtered promotions
+  const categories = useMemo(() => {
+    const categorySet = new Set(['All']);
+    promotions.forEach(item => {
+      // Handle new categories array format
+      if (item.categories && Array.isArray(item.categories)) {
+        item.categories.forEach(cat => {
+          if (cat) {
+            // Capitalize first letter and lowercase the rest for consistent display
+            const normalizedCategory = cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+            categorySet.add(normalizedCategory);
+          }
+        });
+      }
+    });
+    return Array.from(categorySet);
+  }, [promotions]);
+
+  // Filter promotions by selected category
+  const filteredPromotions = useMemo(() => {
+    if (selectedCategory === 'All') {
+      return promotions;
+    }
+    return promotions.filter(item => {
+      // Check if the selected category is in the categories array
+      if (item.categories && Array.isArray(item.categories)) {
+        return item.categories.some(cat =>
+          cat?.toLowerCase() === selectedCategory.toLowerCase()
+        );
+      }
+      return false;
+    });
   }, [promotions, selectedCategory]);
 
   useEffect(() => {
     loadSavedStore();
     startAnimations();
   }, [startAnimations]);
-
-  useEffect(() => {
-    if (selectedStore && !showStoreSelection) {
-      fetchPromotions();
-    }
-  }, [selectedStore, showStoreSelection, fetchPromotions]);
-
-  useEffect(() => {
-    filterPromotions();
-  }, [filterPromotions]);
 
   const loadSavedStore = async () => {
     try {
@@ -172,15 +165,19 @@ const PromotionsScreen = () => {
   const showStoreSelectionScreen = async () => {
     setShowStoreSelection(true);
     setSelectedStore(null);
-    setPromotions([]);
     setIsLoading(false);
     await saveMainMenuState();
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchPromotions();
-    setRefreshing(false);
+    try {
+      await refresh();
+    } catch (error) {
+      console.error('Error refreshing promotions:', error);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const formatPrice = (price: any): string => {
@@ -420,7 +417,7 @@ const PromotionsScreen = () => {
                   <>
                     <View style={[styles.oldPriceContainer, { backgroundColor: colors.text + '10' }]}>
                       <Text style={[styles.oldPrice, { color: colors.text }]}>
-                        Rs {formatPrice(item.previous_price)}
+                        {formatPrice(item.previous_price)}
                       </Text>
                     </View>
                     {calculateSavings(item) > 0 && (
@@ -459,15 +456,19 @@ const PromotionsScreen = () => {
                   </View>
                 </View>
 
-                {item.category && (
+                {item.categories && item.categories.length > 0 && (
                   <View style={styles.detailRow}>
                     <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
                       <Text style={styles.detailIcon}>🏷️</Text>
                     </View>
                     <View style={styles.detailContent}>
-                      <Text style={[styles.detailLabel, { color: colors.text, opacity: 0.6 }]}>Category</Text>
+                      <Text style={[styles.detailLabel, { color: colors.text, opacity: 0.6 }]}>
+                        {item.categories.length > 1 ? 'Categories' : 'Category'}
+                      </Text>
                       <Text style={[styles.detailValue, { color: colors.text }]}>
-                        {item.category}
+                        {item.categories.map(cat =>
+                          cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase()
+                        ).join(', ')}
                       </Text>
                     </View>
                   </View>

@@ -239,7 +239,11 @@ export default function BackendDemoScreen() {
             <View key={index} style={styles.productCard}>
               <Text style={styles.productName}>{product.product}</Text>
               <Text style={styles.productPrice}>{product.price}</Text>
-              {product.category && <Text style={styles.productDetail}>Category: {product.category}</Text>}
+              {product.categories && product.categories.length > 0 && (
+                <Text style={styles.productDetail}>
+                  {product.categories.length > 1 ? 'Categories' : 'Category'}: {product.categories.join(', ')}
+                </Text>
+              )}
               {product.size && <Text style={styles.productDetail}>Size: {product.size}</Text>}
               {product.discount && <Text style={styles.productDiscount}>Discount: {product.discount}</Text>}
             </View>
