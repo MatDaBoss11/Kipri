@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase';
 interface Product {
   id: string;
   product: string;
+  brand?: string;
   size?: string;
   price: number;
   store: string;
@@ -113,16 +114,35 @@ class DataCacheService {
 
     try {
       console.log('🔄 Fetching promotions from database...');
-      const allPromotions: Promotion[] = [];
 
-      await this.fetchPromotionsFromStore('winners_promotions', 'Winners', allPromotions);
-      await this.fetchPromotionsFromStore('super_u_promotions', 'Super U', allPromotions);
-      await this.fetchPromotionsFromStore('kingsavers_promotions', 'Kingsavers', allPromotions);
+      const { data, error } = await supabase
+        .from('promotions')
+        .select('*')
+        .order('timestamp', { ascending: false });
 
-      allPromotions.sort((a, b) => {
-        const aTime = a.timestamp || '';
-        const bTime = b.timestamp || '';
-        return bTime.localeCompare(aTime);
+      if (error) throw error;
+
+      // Map database results to Promotion interface
+      const allPromotions: Promotion[] = (data || []).map(item => {
+        // Handle both old 'category' field and new 'categories' JSONB array
+        let categories: string[] | undefined;
+        if (item.categories && Array.isArray(item.categories)) {
+          categories = item.categories;
+        } else if (item.category) {
+          categories = [item.category];
+        }
+
+        return {
+          id: item.id,
+          product_name: item.product_name,
+          new_price: item.new_price,
+          previous_price: item.previous_price,
+          size: item.size,
+          store_name: item.store, // Map 'store' from database to 'store_name' in interface
+          categories: categories,
+          timestamp: item.timestamp,
+          isPromotion: item.is_promotion !== undefined ? item.is_promotion : true
+        };
       });
 
       this.promotions = allPromotions;
@@ -137,46 +157,10 @@ class DataCacheService {
     }
   }
 
-  private async fetchPromotionsFromStore(
-    tableName: string,
-    storeName: string,
-    allPromotions: Promotion[]
-  ): Promise<void> {
-    try {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .order('timestamp', { ascending: false });
-
-      if (error) throw error;
-
-      if (data) {
-        for (const item of data) {
-          // Handle both old 'category' field and new 'categories' JSONB array
-          let categories: string[] | undefined;
-          if (item.categories && Array.isArray(item.categories)) {
-            categories = item.categories;
-          } else if (item.category) {
-            categories = [item.category];
-          }
-
-          allPromotions.push({
-            ...item,
-            store_name: storeName,
-            isPromotion: true,
-            categories: categories // Array of categories
-          });
-        }
-      }
-    } catch (error) {
-      console.error(`Error fetching ${tableName}:`, error);
-    }
-  }
-
-  public async getSignedImageUrl(productId: string, forceRefresh = false): Promise<string | null> {
+  public async getSignedImageUrl(productId: string, imageFilename?: string, forceRefresh = false): Promise<string | null> {
     // Convert productId to string if it's a number
     const productIdStr = String(productId);
-    
+
     console.log('🔄 Attempting to get image URL for productId:', productIdStr);
 
     const cacheKey = productIdStr;
@@ -187,19 +171,26 @@ class DataCacheService {
     }
 
     try {
-      // Add cache-busting parameter with current timestamp to force fresh image load
-      const timestamp = Date.now();
-      const publicUrl = `https://reuhsokiceymokjwgwjg.supabase.co/storage/v1/object/public/product-images/${productIdStr}.jpg?v=${timestamp}`;
-      
-      console.log('🔄 Generated cache-busting URL for product', productIdStr, ':', publicUrl);
-      
+      // Use imageFilename if provided, otherwise fall back to productId
+      // No cache-busting - let expo-image handle disk caching
+      const filename = imageFilename || productIdStr;
+      const publicUrl = `https://reuhsokiceymokjwgwjg.supabase.co/storage/v1/object/public/product-images/${filename}.jpg`;
+
       this.imageUrls[cacheKey] = publicUrl;
-      console.log('✅ Image URL cached for product', productIdStr);
       return publicUrl;
     } catch (error) {
       console.error('❌ Error generating public URL for product', productIdStr, ':', error);
       return null;
     }
+  }
+
+  /**
+   * Fast synchronous URL generator - no async overhead
+   * Use this for on-demand image loading in components
+   */
+  public getImageUrl(productId: string, imageFilename?: string): string {
+    const filename = imageFilename || String(productId);
+    return `https://reuhsokiceymokjwgwjg.supabase.co/storage/v1/object/public/product-images/${filename}.jpg`;
   }
 
   public async invalidateCache(): Promise<void> {
@@ -271,28 +262,96 @@ class DataCacheService {
   }
 
   /**
+   * Fetch data filtered by store names for preloading
+   * Only loads products and promotions from the specified stores
+   * @param storeNames Array of store names to filter by
+   */
+  public async preloadDataForStores(storeNames: string[]): Promise<{ products: Product[]; promotions: Promotion[] }> {
+    console.log('🚀 Preloading data for stores:', storeNames);
+
+    try {
+      // Fetch products filtered by store names
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('*')
+        .in('store', storeNames)
+        .order('created_at', { ascending: false });
+
+      if (productsError) throw productsError;
+
+      const products = productsData || [];
+
+      // Fetch promotions filtered by store names
+      const { data: promotionsData, error: promotionsError } = await supabase
+        .from('promotions')
+        .select('*')
+        .in('store', storeNames)
+        .order('timestamp', { ascending: false });
+
+      if (promotionsError) throw promotionsError;
+
+      // Map database results to Promotion interface
+      const allPromotions: Promotion[] = (promotionsData || []).map(item => {
+        // Handle both old 'category' field and new 'categories' JSONB array
+        let categories: string[] | undefined;
+        if (item.categories && Array.isArray(item.categories)) {
+          categories = item.categories;
+        } else if (item.category) {
+          categories = [item.category];
+        }
+
+        return {
+          id: item.id,
+          product_name: item.product_name,
+          new_price: item.new_price,
+          previous_price: item.previous_price,
+          size: item.size,
+          store_name: item.store, // Map 'store' from database to 'store_name' in interface
+          categories: categories,
+          timestamp: item.timestamp,
+          isPromotion: item.is_promotion !== undefined ? item.is_promotion : true
+        };
+      });
+
+      // Update cache with filtered data
+      this.products = products;
+      this.promotions = allPromotions;
+      this.isProductsCached = true;
+      this.isPromotionsCached = true;
+      this.lastProductsUpdate = new Date();
+      this.lastPromotionsUpdate = new Date();
+
+      console.log(`✅ Preloaded ${products.length} products and ${allPromotions.length} promotions from ${storeNames.length} stores`);
+      return { products, promotions: allPromotions };
+    } catch (error) {
+      console.error('❌ Error preloading data for stores:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Preload all image URLs in parallel with batching to avoid overwhelming the network
-   * @param productIds Array of product IDs to preload image URLs for
+   * @param productImageInfo Array of objects with id and optional images filename
    * @returns Object mapping product IDs to their image URLs
    */
-  public async preloadAllImageUrls(productIds: string[]): Promise<{ [key: string]: string | null }> {
-    console.log(`🖼️ Preloading ${productIds.length} image URLs...`);
+  public async preloadAllImageUrls(productImageInfo: { id: string; images?: string }[]): Promise<{ [key: string]: string | null }> {
+    console.log(`🖼️ Preloading ${productImageInfo.length} image URLs...`);
     const imageUrls: { [key: string]: string | null } = {};
     const batchSize = 10;
 
-    for (let i = 0; i < productIds.length; i += batchSize) {
-      const batch = productIds.slice(i, i + batchSize);
+    for (let i = 0; i < productImageInfo.length; i += batchSize) {
+      const batch = productImageInfo.slice(i, i + batchSize);
       const results = await Promise.all(
-        batch.map(async (id) => ({
-          id,
-          url: await this.getSignedImageUrl(id)
+        batch.map(async (info) => ({
+          id: info.id,
+          url: await this.getSignedImageUrl(info.id, info.images)
         }))
       );
       results.forEach(r => { imageUrls[r.id] = r.url; });
 
       // Log progress for debugging
-      const progress = Math.min(i + batchSize, productIds.length);
-      console.log(`📸 Image URL progress: ${progress}/${productIds.length}`);
+      const progress = Math.min(i + batchSize, productImageInfo.length);
+      console.log(`📸 Image URL progress: ${progress}/${productImageInfo.length}`);
     }
 
     console.log(`✅ Preloaded ${Object.keys(imageUrls).length} image URLs`);

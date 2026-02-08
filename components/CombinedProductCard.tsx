@@ -1,33 +1,28 @@
-import { Image } from 'expo-image';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
-import React from 'react';
+import { Image } from 'expo-image';
+import React, { useMemo } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
   ColorSchemeName,
   Dimensions,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Product, Promotion } from '../types';
 import { findPromotionForProduct } from '../constants/mainProductList';
+import { useAppData } from '../contexts/AppDataContext';
 import { useSavedItems } from '../contexts/SavedItemsContext';
+import { Product, Promotion } from '../types';
 
 const { width } = Dimensions.get('window');
-
-// Store priority for image selection: Winners > Super U > King Savers
-const STORE_PRIORITY: { [key: string]: number } = {
-  'winners': 1,
-  'super u': 2,
-  'kingsavers': 3,
-  'king savers': 3,
-};
 
 export interface CombinedProduct {
   id: string;
   name: string;
+  brand?: string;
   size?: string;
   categories?: string[];
   products: (Product | Promotion)[];
@@ -40,22 +35,43 @@ interface CombinedProductCardProps {
   onPress: () => void;
   colors: any;
   colorScheme: ColorSchemeName;
-  imageUrl: string | null;
-  imageLoading: boolean;
   promotions?: Promotion[];
 }
+
+// Skeleton placeholder component
+const ImageSkeleton: React.FC<{ colors: any }> = ({ colors }) => {
+  return (
+    <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
+      <View style={[styles.skeletonShimmer, { backgroundColor: colors.border }]} />
+    </View>
+  );
+};
 
 const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
   combinedProduct,
   onPress,
   colors,
   colorScheme,
-  imageUrl,
-  imageLoading,
   promotions = [],
 }) => {
-  const { name, size, products } = combinedProduct;
+  const { name, brand, size, products, primaryImageProductId, primaryProduct } = combinedProduct;
+
+  // Calculate dynamic height for iOS based on number of products
+  const getCardHeight = () => {
+    if (Platform.OS !== 'ios') return 160;
+    // iOS: Each product needs more vertical space due to stacked layout
+    const baseHeight = 100; // Base height for image and product info
+    const perProductHeight = 40; // Height per product in vertical layout
+    return Math.max(160, baseHeight + (products.length * perProductHeight));
+  };
   const { saveLowestPriceProduct, removeItem, isProductSaved } = useSavedItems();
+  const { getImageUrl } = useAppData();
+
+  // Generate image URL on-demand (synchronous, fast!)
+  const imageUrl = useMemo(() => {
+    const imageFilename = 'images' in primaryProduct ? (primaryProduct as any).images : undefined;
+    return getImageUrl(primaryImageProductId, imageFilename);
+  }, [primaryImageProductId, primaryProduct, getImageUrl]);
 
   // Check if any product from this combined product is saved
   const getSavedProductInfo = (): { isSaved: boolean; savedId: string | null } => {
@@ -70,7 +86,7 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
 
   const { isSaved, savedId } = getSavedProductInfo();
 
-  const handleBookmarkPress = async (event: any) => {
+  const handleBookmarkPress = async (event: import('react-native').GestureResponderEvent) => {
     event.stopPropagation();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -97,15 +113,7 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     return 'isPromotion' in item;
   };
 
-  const getPreviousPrice = (item: Product | Promotion): number | undefined => {
-    if ('previous_price' in item) {
-      return item.previous_price;
-    }
-    return undefined;
-  };
-
   const getEffectivePrice = (item: Product | Promotion): { price: number; isPromotion: boolean } => {
-    // Only regular products can have promotions, not promotions themselves
     if ('store' in item && !('isPromotion' in item)) {
       const promotion = findPromotionForProduct(item as Product, promotions);
       if (promotion) {
@@ -125,12 +133,10 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     }
   };
 
-  // Get the lowest price from all stores for highlighting (includes promotions)
   const getLowestPrice = (): number => {
     return Math.min(...products.map(p => getEffectivePrice(p).price));
   };
 
-  // Get store color based on store name
   const getStoreColor = (storeName: string): string => {
     const normalizedStore = storeName.toLowerCase();
     if (normalizedStore.includes('winner')) return '#FF9800';
@@ -139,14 +145,13 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     return colors.primary;
   };
 
-  // Get price color based on whether it's the lowest (uses effective prices)
   const getPriceColor = (price: number, isPromo: boolean): string => {
     const lowestPrice = getLowestPrice();
     if (price === lowestPrice && products.length > 1) {
-      return isPromo ? '#ff6b6b' : '#10b981'; // Red for promo, green for lowest
+      return isPromo ? '#ff6b6b' : '#10b981';
     }
     if (price > lowestPrice * 1.1) {
-      return '#ef4444'; // Red for higher prices
+      return '#ef4444';
     }
     return colors.text;
   };
@@ -155,7 +160,11 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
 
   return (
     <TouchableOpacity
-      style={[styles.card, { backgroundColor: colors.card }]}
+      style={[
+        styles.card,
+        { backgroundColor: colors.card },
+        Platform.OS === 'ios' && { height: getCardHeight(), minHeight: getCardHeight() }
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -172,27 +181,28 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
         />
       </TouchableOpacity>
 
-      {/* Image Section */}
+      {/* Image Section - Lazy loaded with expo-image disk caching */}
       <View style={styles.imageSection}>
-        {imageLoading ? (
-          <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
-            <ActivityIndicator size="small" color={colors.primary} />
-          </View>
-        ) : imageUrl ? (
-          <Image
-            source={{ uri: imageUrl }}
-            style={styles.productImage}
-            contentFit="cover"
-          />
-        ) : (
-          <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
-            <Text style={styles.placeholderIcon}>No Image</Text>
-          </View>
-        )}
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.productImage}
+          contentFit="cover"
+          cachePolicy="disk"
+          transition={200}
+          placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+          placeholderContentFit="cover"
+        />
       </View>
 
       {/* Details Section */}
       <View style={styles.detailsSection}>
+        {/* Brand */}
+        {brand && (
+          <Text style={[styles.brandText, { color: colors.primary }]} numberOfLines={1}>
+            {brand}
+          </Text>
+        )}
+
         {/* Product Name */}
         <Text style={[styles.productName, { color: colors.text }]} numberOfLines={2}>
           {name}
@@ -220,59 +230,100 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
               <View
                 key={`${storeName}-${index}`}
                 style={[
-                  styles.priceRow,
+                  Platform.OS === 'ios' ? styles.priceRowIOS : styles.priceRow,
                   isPriceLowest && styles.lowestPriceRow,
                   isPriceLowest && hasPromo && { backgroundColor: '#ff6b6b15' },
                   isPriceLowest && !hasPromo && { backgroundColor: '#10b98115' }
                 ]}
               >
-                <View style={styles.storeNameContainer}>
-                  <View
-                    style={[
-                      styles.storeDot,
-                      { backgroundColor: getStoreColor(storeName) }
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.storeName,
-                      { color: colors.text }
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {storeName}
-                  </Text>
-                  {(isPromo || hasPromo) && (
-                    <View style={styles.promoBadge}>
-                      <Text style={styles.promoText}>PROMO</Text>
+                {Platform.OS === 'ios' ? (
+                  // iOS: Vertical layout - store name on top, price below
+                  <View style={styles.priceRowIOSContent}>
+                    <View style={styles.storeNameContainerIOS}>
+                      <View
+                        style={[
+                          styles.storeDot,
+                          { backgroundColor: getStoreColor(storeName) }
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.storeNameIOS,
+                          { color: colors.text }
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {storeName}
+                      </Text>
+                      {(isPromo || hasPromo) && (
+                        <View style={styles.promoBadge}>
+                          <Text style={styles.promoText}>PROMO</Text>
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
-                <View style={styles.priceContainer}>
-                  {hasPromo && originalPrice !== displayPrice && (
-                    <Text style={[styles.previousPrice, { color: colors.error }]}>
-                      {formatPrice(originalPrice)}
-                    </Text>
-                  )}
-                  <Text
-                    style={[
-                      styles.priceText,
-                      { color: getPriceColor(displayPrice, hasPromo) },
-                      isPriceLowest && styles.lowestPriceText
-                    ]}
-                  >
-                    Rs {formatPrice(displayPrice)}
-                  </Text>
-                </View>
+                    <View style={styles.priceContainerIOS}>
+                      {hasPromo && originalPrice !== displayPrice && (
+                        <Text style={[styles.previousPrice, { color: colors.error }]}>
+                          Rs {formatPrice(originalPrice)}
+                        </Text>
+                      )}
+                      <Text
+                        style={[
+                          styles.priceTextIOS,
+                          { color: getPriceColor(displayPrice, hasPromo) },
+                          isPriceLowest && styles.lowestPriceText
+                        ]}
+                      >
+                        Rs {formatPrice(displayPrice)}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  // Android: Horizontal layout (original)
+                  <>
+                    <View style={styles.storeNameContainer}>
+                      <View
+                        style={[
+                          styles.storeDot,
+                          { backgroundColor: getStoreColor(storeName) }
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.storeName,
+                          { color: colors.text }
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {storeName}
+                      </Text>
+                      {(isPromo || hasPromo) && (
+                        <View style={styles.promoBadge}>
+                          <Text style={styles.promoText}>PROMO</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.priceContainer}>
+                      {hasPromo && originalPrice !== displayPrice && (
+                        <Text style={[styles.previousPrice, { color: colors.error }]}>
+                          {formatPrice(originalPrice)}
+                        </Text>
+                      )}
+                      <Text
+                        style={[
+                          styles.priceText,
+                          { color: getPriceColor(displayPrice, hasPromo) },
+                          isPriceLowest && styles.lowestPriceText
+                        ]}
+                      >
+                        Rs {formatPrice(displayPrice)}
+                      </Text>
+                    </View>
+                  </>
+                )}
               </View>
             );
           })}
-        </View>
-
-        {/* Tap indicator */}
-        <View style={styles.tapIndicator}>
-          <Text style={[styles.tapText, { color: colors.text }]}>Tap for details</Text>
-          <Text style={[styles.tapArrow, { color: colors.primary }]}>+</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -286,60 +337,74 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 }, // Reduced shadow offset slightly
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 6, // Reduced shadow radius
-    elevation: 4, // Reduced elevation
+    shadowRadius: 6,
+    elevation: 4,
     overflow: 'hidden',
-    height: 160, // Match image height
+    height: 160,
     position: 'relative',
   },
   bookmarkButton: {
     position: 'absolute',
     top: 8,
-    right: 8,
+    // iOS: top left (over image), Android: top right (over text area)
+    left: Platform.OS === 'ios' ? 8 : undefined,
+    right: Platform.OS === 'ios' ? undefined : 8,
     zIndex: 10,
     padding: 4,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 16,
   },
   imageSection: {
-    width: 160, // Larger square image
-    height: 160, // Same as width for square
+    width: 160,
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 4, // Added small padding
+    padding: 4,
   },
   productImage: {
     width: 150,
     height: 150,
+    borderRadius: 8,
   },
   imagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    minHeight: 22,
+    width: 150,
+    height: 150,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 8,
+    overflow: 'hidden',
   },
-  placeholderIcon: {
-    fontSize: 20, // Reduced icon size
-    opacity: 0.5,
+  skeletonShimmer: {
+    width: '100%',
+    height: '100%',
+    opacity: 0.3,
   },
   detailsSection: {
-    flex: 1, // Take remaining space
-    paddingVertical: 8, // Add some vertical padding
-    paddingHorizontal: 8, // Add horizontal padding
-    justifyContent: 'flex-start', // Align content to top
-    overflow: 'hidden', // Cut off bottom content
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
+  },
+  brandText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   productName: {
-    fontSize: 24, // 50% larger (from 16 to 24)
-    fontWeight: '700',
+    // Smaller font for iOS to prevent overlapping (iOS renders fonts larger)
+    fontSize: Platform.OS === 'ios' ? 16 : 24,
+    fontWeight: Platform.OS === 'ios' ? '600' : '700',
     marginBottom: 2,
-    lineHeight: 26, // Tighter line height
+    // More generous line height for iOS
+    lineHeight: Platform.OS === 'ios' ? 20 : 26,
   },
   sizeText: {
-    fontSize: 12, // Reduced from 18 to 12
+    fontSize: 12,
     opacity: 0.6,
     marginBottom: 4,
   },
@@ -354,6 +419,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     borderRadius: 6,
   },
+  priceRowIOS: {
+    paddingVertical: 2,
+    paddingHorizontal: 3,
+    borderRadius: 6,
+  },
+  priceRowIOSContent: {
+    flexDirection: 'column',
+  },
+  storeNameContainerIOS: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  storeNameIOS: {
+    fontSize: 12,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  priceContainerIOS: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 12,
+    marginTop: 1,
+    gap: 6,
+  },
+  priceTextIOS: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   lowestPriceRow: {
     borderWidth: 1,
     borderColor: '#10b98130',
@@ -364,13 +457,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   storeDot: {
-    width: 6, // Slightly smaller dot
+    width: 6,
     height: 6,
     borderRadius: 3,
     marginRight: 6,
   },
   storeName: {
-    fontSize: 14, // Increased from 12 to 14
+    fontSize: 14,
     fontWeight: '500',
   },
   promoBadge: {
@@ -396,28 +489,11 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   priceText: {
-    fontSize: 14, // Increased from 12 to 14
+    fontSize: 14,
     fontWeight: '600',
   },
   lowestPriceText: {
     fontWeight: '800',
-  },
-  tapIndicator: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-    paddingTop: 4,
-    borderTopWidth: 0,
-    display: 'none', // Hide tap indicator to make card cleaner/shorter as requested "thinner" often implies less clutter
-  },
-  tapText: {
-    fontSize: 9,
-    opacity: 0.4,
-  },
-  tapArrow: {
-    fontSize: 16,
-    fontWeight: '700',
   },
 });
 

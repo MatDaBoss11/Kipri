@@ -33,7 +33,6 @@ const PricesScreen = () => {
   // Use preloaded data from AppDataContext
   const {
     combinedProducts: allCombinedProducts,
-    imageUrls: preloadedImageUrls,
     promotions,
     isLoading,
     refresh
@@ -125,17 +124,12 @@ const PricesScreen = () => {
   };
 
   const renderCombinedProductCard = ({ item }: { item: CombinedProduct }) => {
-    // Use preloaded image URLs from context
-    const imageUrl = preloadedImageUrls[item.primaryImageProductId] || null;
-
     return (
       <CombinedProductCard
         combinedProduct={item}
         onPress={() => showProductDetails(item)}
         colors={colors}
         colorScheme={colorScheme}
-        imageUrl={imageUrl}
-        imageLoading={false}
         promotions={promotions}
       />
     );
@@ -237,6 +231,16 @@ const PricesScreen = () => {
             styles.productListContent,
             { paddingBottom: Platform.OS === 'ios' ? 100 : 20 }
           ]}
+          // Performance optimizations
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          initialNumToRender={8}
+          getItemLayout={(data, index) => ({
+            length: 168, // card height (160) + margin (8)
+            offset: 168 * index,
+            index,
+          })}
         />
       )}
 

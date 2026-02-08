@@ -1,4 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
+import { ReviewedReceiptItem } from '../types';
 import GeminiApiService, { Product } from './GeminiApiService';
 import ImageUploadService from './ImageUploadService';
 import OpenAiService, { FoodCategoryResult } from './OpenAiService';
@@ -268,6 +269,48 @@ class KipriBackendService {
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       };
     }
+  }
+
+  /**
+   * Batch save receipt products to Supabase
+   */
+  async batchSaveReceiptProducts(items: ReviewedReceiptItem[]): Promise<{ saved: number; failed: number; errors: string[] }> {
+    const result = { saved: 0, failed: 0, errors: [] as string[] };
+
+    // Filter to only included, non-duplicate items
+    const itemsToSave = items.filter(item => item.included && !item.isDuplicate);
+
+    if (itemsToSave.length === 0) {
+      result.errors.push('No items to save');
+      return result;
+    }
+
+    // Convert to Product[] format for SupabaseService.saveProducts
+    const products: Product[] = itemsToSave.map(item => ({
+      product: item.product_name,
+      brand: item.brand?.toUpperCase() || '',
+      price: item.price.toString(),
+      size: item.size || '',
+      store: item.store,
+      categories: item.categories.length > 0 ? item.categories : ['miscellaneous'],
+    }));
+
+    try {
+      const savedProducts = await SupabaseService.saveProducts(products);
+
+      if (savedProducts) {
+        result.saved = savedProducts.length;
+        result.failed = itemsToSave.length - savedProducts.length;
+      } else {
+        result.failed = itemsToSave.length;
+        result.errors.push('Batch save returned null');
+      }
+    } catch (error) {
+      result.failed = itemsToSave.length;
+      result.errors.push(error instanceof Error ? error.message : 'Unknown error during batch save');
+    }
+
+    return result;
   }
 
   // Database operations

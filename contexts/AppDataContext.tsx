@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { Image } from 'react-native';
 import { Product, Promotion } from '../types';
 import DataCacheService from '../services/DataCacheService';
 import ProductGroupingService, { CombinedProduct } from '../services/ProductGroupingService';
@@ -8,18 +7,20 @@ interface AppDataContextType {
   products: Product[];
   promotions: Promotion[];
   combinedProducts: CombinedProduct[];
-  imageUrls: { [key: string]: string | null };
   isLoading: boolean;
   isReady: boolean;
   error: string | null;
   loadingMessage: string;
   refresh: () => Promise<void>;
+  reloadForStores: (storeNames: string[]) => Promise<void>;
+  getImageUrl: (productId: string, imageFilename?: string) => string;
 }
 
 interface AppDataProviderProps {
   children: React.ReactNode;
   onReady?: () => void;
   onLoadingMessage?: (message: string) => void;
+  selectedStoreNames?: string[] | null;
 }
 
 const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
@@ -27,12 +28,12 @@ const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
 export const AppDataProvider: React.FC<AppDataProviderProps> = ({
   children,
   onReady,
-  onLoadingMessage
+  onLoadingMessage,
+  selectedStoreNames = null
 }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [combinedProducts, setCombinedProducts] = useState<CombinedProduct[]>([]);
-  const [imageUrls, setImageUrls] = useState<{ [key: string]: string | null }>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,12 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
     }
   }, [onLoadingMessage]);
 
-  const preloadData = useCallback(async () => {
+  // Fast synchronous image URL generator - no preloading needed!
+  const getImageUrl = useCallback((productId: string, imageFilename?: string): string => {
+    return cacheService.getImageUrl(productId, imageFilename);
+  }, [cacheService]);
+
+  const preloadData = useCallback(async (storeNames?: string[] | null) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -57,8 +63,21 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
       updateLoadingMessage('Fetching products...');
       console.log('[AppDataContext] Starting data preload...');
 
-      const { products: fetchedProducts, promotions: fetchedPromotions } =
-        await cacheService.preloadAllData();
+      let fetchedProducts: Product[];
+      let fetchedPromotions: Promotion[];
+
+      // If store names are provided, only load data for those stores
+      if (storeNames && storeNames.length > 0) {
+        console.log(`[AppDataContext] Loading data for ${storeNames.length} selected stores:`, storeNames);
+        const result = await cacheService.preloadDataForStores(storeNames);
+        fetchedProducts = result.products;
+        fetchedPromotions = result.promotions;
+      } else {
+        console.log('[AppDataContext] Loading all data (no store filter)');
+        const result = await cacheService.preloadAllData();
+        fetchedProducts = result.products;
+        fetchedPromotions = result.promotions;
+      }
 
       console.log(`[AppDataContext] Fetched ${fetchedProducts.length} products, ${fetchedPromotions.length} promotions`);
 
@@ -66,7 +85,7 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
       setPromotions(fetchedPromotions);
 
       // Step 2: Group products into combined products
-      updateLoadingMessage('Processing products...');
+      updateLoadingMessage('Organizing products...');
       console.log('[AppDataContext] Grouping products...');
 
       const groups = groupingService.groupProducts(fetchedProducts);
@@ -75,41 +94,11 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
       console.log(`[AppDataContext] Created ${combined.length} combined products`);
       setCombinedProducts(combined);
 
-      // Step 3: Preload all image URLs
-      updateLoadingMessage('Loading images...');
-      console.log('[AppDataContext] Preloading image URLs...');
+      // NO IMAGE PRELOADING! Images load on-demand via expo-image with disk caching
+      // This is what makes the app fast - we show the UI immediately
 
-      const productIds = combined.map(cp => cp.primaryImageProductId);
-      const preloadedImageUrls = await cacheService.preloadAllImageUrls(productIds);
-
-      console.log(`[AppDataContext] Preloaded ${Object.keys(preloadedImageUrls).length} image URLs`);
-      setImageUrls(preloadedImageUrls);
-
-      // Step 4: Prefetch actual images into memory/cache
-      updateLoadingMessage('Caching images...');
-      console.log('[AppDataContext] Prefetching images into memory...');
-
-      const validUrls = Object.values(preloadedImageUrls).filter((url): url is string => url !== null);
-
-      // Prefetch images in batches to avoid overwhelming the network
-      const imageBatchSize = 5;
-      for (let i = 0; i < validUrls.length; i += imageBatchSize) {
-        const batch = validUrls.slice(i, i + imageBatchSize);
-        await Promise.all(
-          batch.map(url =>
-            Image.prefetch(url).catch(err => {
-              console.log('[AppDataContext] Failed to prefetch image:', err);
-              return false;
-            })
-          )
-        );
-        const progress = Math.min(i + imageBatchSize, validUrls.length);
-        console.log(`[AppDataContext] Image prefetch progress: ${progress}/${validUrls.length}`);
-      }
-
-      console.log('[AppDataContext] Image prefetch complete!');
       updateLoadingMessage('Ready!');
-      console.log('[AppDataContext] Data preload complete!');
+      console.log('[AppDataContext] Data preload complete! (Images will load on-demand)');
 
       setIsReady(true);
       if (onReady) {
@@ -123,7 +112,6 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
       setProducts([]);
       setPromotions([]);
       setCombinedProducts([]);
-      setImageUrls({});
       setIsReady(true);
 
       if (onReady) {
@@ -134,6 +122,32 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
     }
   }, [cacheService, groupingService, onReady, updateLoadingMessage]);
 
+  const reloadForStores = useCallback(async (storeNames: string[]) => {
+    try {
+      console.log('[AppDataContext] Reloading data for new stores:', storeNames);
+      setIsLoading(true);
+      setError(null);
+
+      // Clear old cached data
+      updateLoadingMessage('Clearing old data...');
+      await cacheService.invalidateCache();
+
+      // Clear state
+      setProducts([]);
+      setPromotions([]);
+      setCombinedProducts([]);
+
+      // Reload data for new stores
+      await preloadData(storeNames);
+
+      console.log('[AppDataContext] Store data reload complete');
+    } catch (err) {
+      console.error('[AppDataContext] Error reloading data for stores:', err);
+      setError(err instanceof Error ? err.message : 'Failed to reload data');
+      throw err;
+    }
+  }, [cacheService, preloadData, updateLoadingMessage]);
+
   const refresh = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -141,9 +155,21 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
 
       console.log('[AppDataContext] Refreshing data...');
 
-      // Force refresh all data
-      const { products: fetchedProducts, promotions: fetchedPromotions } =
-        await cacheService.preloadAllData();
+      // Force refresh data - use store filter if available
+      let fetchedProducts: Product[];
+      let fetchedPromotions: Promotion[];
+
+      if (selectedStoreNames && selectedStoreNames.length > 0) {
+        console.log(`[AppDataContext] Refreshing data for ${selectedStoreNames.length} selected stores`);
+        const result = await cacheService.preloadDataForStores(selectedStoreNames);
+        fetchedProducts = result.products;
+        fetchedPromotions = result.promotions;
+      } else {
+        console.log('[AppDataContext] Refreshing all data (no store filter)');
+        const result = await cacheService.preloadAllData();
+        fetchedProducts = result.products;
+        fetchedPromotions = result.promotions;
+      }
 
       setProducts(fetchedProducts);
       setPromotions(fetchedPromotions);
@@ -153,34 +179,7 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
       const combined = groupingService.createCombinedProducts(groups);
       setCombinedProducts(combined);
 
-      // Re-preload image URLs with force refresh
-      const productIds = combined.map(cp => cp.primaryImageProductId);
-      const preloadedImageUrls: { [key: string]: string | null } = {};
-
-      // Use batch preloading
-      const batchSize = 10;
-      for (let i = 0; i < productIds.length; i += batchSize) {
-        const batch = productIds.slice(i, i + batchSize);
-        const results = await Promise.all(
-          batch.map(async (id) => ({
-            id,
-            url: await cacheService.getSignedImageUrl(id, true)
-          }))
-        );
-        results.forEach(r => { preloadedImageUrls[r.id] = r.url; });
-      }
-
-      setImageUrls(preloadedImageUrls);
-
-      // Prefetch images into memory cache
-      const validUrls = Object.values(preloadedImageUrls).filter((url): url is string => url !== null);
-      const imageBatchSize = 5;
-      for (let i = 0; i < validUrls.length; i += imageBatchSize) {
-        const batch = validUrls.slice(i, i + imageBatchSize);
-        await Promise.all(
-          batch.map(url => Image.prefetch(url).catch(() => false))
-        );
-      }
+      // No image preloading - expo-image handles caching automatically
 
       console.log('[AppDataContext] Data refresh complete!');
     } catch (err) {
@@ -190,24 +189,25 @@ export const AppDataProvider: React.FC<AppDataProviderProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [cacheService, groupingService]);
+  }, [cacheService, groupingService, selectedStoreNames]);
 
   // Initial data load on mount
   useEffect(() => {
-    preloadData();
-  }, []);
+    preloadData(selectedStoreNames || undefined);
+  }, [selectedStoreNames]);
 
   const value: AppDataContextType = useMemo(() => ({
     products,
     promotions,
     combinedProducts,
-    imageUrls,
     isLoading,
     isReady,
     error,
     loadingMessage,
     refresh,
-  }), [products, promotions, combinedProducts, imageUrls, isLoading, isReady, error, loadingMessage, refresh]);
+    reloadForStores,
+    getImageUrl,
+  }), [products, promotions, combinedProducts, isLoading, isReady, error, loadingMessage, refresh, reloadForStores, getImageUrl]);
 
   return (
     <AppDataContext.Provider value={value}>

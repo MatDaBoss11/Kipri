@@ -1,31 +1,28 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
+import { Image } from 'expo-image';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  Modal,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-  Platform,
   ActivityIndicator,
-  TextInput,
   Alert,
   ColorSchemeName,
-  FlatList,
-  Dimensions,
+  Modal,
   PanResponder,
-  GestureResponderEvent,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
-import { BlurView } from 'expo-blur';
-import { Image } from 'expo-image';
-import * as Haptics from 'expo-haptics';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Product, Promotion } from '../types';
-import { CombinedProduct } from './CombinedProductCard';
-import DataCacheService from '../services/DataCacheService';
-import SupabaseService from '../services/SupabaseService';
 import { findPromotionForProduct } from '../constants/mainProductList';
 import { useSavedItems } from '../contexts/SavedItemsContext';
+import DataCacheService from '../services/DataCacheService';
+import SupabaseService from '../services/SupabaseService';
+import { Product, Promotion } from '../types';
+import { CombinedProduct } from './CombinedProductCard';
 
 const NO_IMAGE_PLACEHOLDER = require('../assets/images/Screenshot 2025-12-11 121944.png');
 
@@ -49,35 +46,37 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
   onPriceUpdated,
 }) => {
   const { saveSpecificProduct, removeItem, isProductSaved } = useSavedItems();
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(true);
-  const [isImagePlaceholder, setIsImagePlaceholder] = useState(false);
   const [selectedProductForUpdate, setSelectedProductForUpdate] = useState<Product | null>(null);
   const [showUpdatePrice, setShowUpdatePrice] = useState(false);
   const [newPrice, setNewPrice] = useState('');
   const [isUpdatingPrice, setIsUpdatingPrice] = useState(false);
-  const [carouselImages, setCarouselImages] = useState<{ url: string | null; storeName: string; loading: boolean; isPlaceholder?: boolean }[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const cacheService = DataCacheService.getInstance();
+
+  // Generate carousel images synchronously - no async needed!
+  const carouselImages = combinedProduct ? combinedProduct.products.map((product) => {
+    const storeName = 'store' in product ? product.store : product.store_name;
+    const imageFilename = 'images' in product ? (product as any).images : undefined;
+    const url = cacheService.getImageUrl(product.id, imageFilename);
+    return { url, storeName };
+  }) : [];
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderRelease: (evt: GestureResponderEvent) => {
-        const { translationX } = evt.nativeEvent;
+      onPanResponderRelease: (_, gestureState) => {
+        const { dx } = gestureState;
         const threshold = 50;
 
-        if (translationX > threshold && currentImageIndex > 0) {
-          // Swiped right - go to previous image
+        if (dx > threshold && currentImageIndex > 0) {
           setCurrentImageIndex(currentImageIndex - 1);
-        } else if (translationX < -threshold && currentImageIndex < carouselImages.length - 1) {
-          // Swiped left - go to next image
+        } else if (dx < -threshold && combinedProduct && currentImageIndex < combinedProduct.products.length - 1) {
           setCurrentImageIndex(currentImageIndex + 1);
         }
       },
     })
   ).current;
-
-  const cacheService = DataCacheService.getInstance();
 
   const goToPreviousImage = () => {
     if (currentImageIndex > 0) {
@@ -86,62 +85,21 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
   };
 
   const goToNextImage = () => {
-    if (currentImageIndex < carouselImages.length - 1) {
+    if (combinedProduct && currentImageIndex < combinedProduct.products.length - 1) {
       setCurrentImageIndex(currentImageIndex + 1);
     }
   };
 
-  const loadImage = useCallback(async () => {
-    if (!combinedProduct) return;
-
-    try {
-      setImageLoading(true);
-      setIsImagePlaceholder(false);
-      const url = await cacheService.getSignedImageUrl(combinedProduct.primaryImageProductId, true);
-      setImageUrl(url);
-    } catch (error) {
-      console.error('Error loading image:', error);
-      // Use local placeholder image when no image is available
-      setIsImagePlaceholder(true);
-    } finally {
-      setImageLoading(false);
-    }
-  }, [combinedProduct, cacheService]);
-
-  const loadCarouselImages = useCallback(async () => {
-    if (!combinedProduct) return;
-
-    try {
-      const imagePromises = combinedProduct.products.map(async (product) => {
-        const storeName = getStoreName(product);
-        try {
-          const url = await cacheService.getSignedImageUrl(product.id, true);
-          return { url, storeName, loading: false };
-        } catch (error) {
-          console.error(`Error loading image for ${storeName}:`, error);
-          // Use local placeholder image when no image is available
-          return { url: null, storeName, loading: false, isPlaceholder: true };
-        }
-      });
-
-      const images = await Promise.all(imagePromises);
-      setCarouselImages(images);
-      setCurrentImageIndex(0);
-    } catch (error) {
-      console.error('Error loading carousel images:', error);
-    }
-  }, [combinedProduct, cacheService]);
-
+  // Reset image index when modal opens
   useEffect(() => {
     if (visible && combinedProduct) {
-      loadImage();
-      loadCarouselImages();
+      setCurrentImageIndex(0);
     }
-  }, [visible, combinedProduct, loadImage, loadCarouselImages]);
+  }, [visible, combinedProduct]);
 
   if (!combinedProduct) return null;
 
-  const { name, size, categories, products } = combinedProduct;
+  const { name, brand, size, categories, products } = combinedProduct;
 
   const getStoreName = (item: Product | Promotion): string => {
     return 'store' in item ? item.store : item.store_name;
@@ -196,9 +154,6 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
     }
   };
 
-  const getLowestPrice = (): number => {
-    return Math.min(...products.map(p => getPrice(p)));
-  };
 
   const getHighestPrice = (): number => {
     // Use original prices for highest calculation
@@ -390,23 +345,15 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                       )}
 
                       <View style={styles.imageWrapper}>
-                        {carouselImages[currentImageIndex]?.loading ? (
-                          <View style={[styles.imagePlaceholder, { backgroundColor: colors.background }]}>
-                            <ActivityIndicator size="large" color={colors.primary} />
-                          </View>
-                        ) : carouselImages[currentImageIndex]?.isPlaceholder ? (
-                          <Image
-                            source={NO_IMAGE_PLACEHOLDER}
-                            style={styles.productImage}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <Image
-                            source={{ uri: carouselImages[currentImageIndex]?.url }}
-                            style={styles.productImage}
-                            contentFit="cover"
-                          />
-                        )}
+                        <Image
+                          source={{ uri: carouselImages[currentImageIndex]?.url }}
+                          style={styles.productImage}
+                          contentFit="cover"
+                          cachePolicy="disk"
+                          transition={200}
+                          placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+                          placeholderContentFit="cover"
+                        />
                       </View>
 
                       {/* Right Arrow */}
@@ -454,6 +401,9 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
               </View>
 
               {/* Product Info */}
+              {brand && (
+                <Text style={[styles.brandText, { color: colors.primary }]}>{brand}</Text>
+              )}
               <Text style={[styles.productName, { color: colors.text }]}>{name}</Text>
 
               {size && (
@@ -544,34 +494,54 @@ const ProductComparisonModal: React.FC<ProductComparisonModalProps> = ({
                     )}
 
                     <View style={styles.storeHeader}>
-                      <View style={styles.storeNameRow}>
-                        <View
-                          style={[
-                            styles.storeColorDot,
-                            { backgroundColor: getStoreColor(storeName) }
-                          ]}
-                        />
-                        <Text style={[styles.storeCardName, { color: colors.text }]}>
-                          {storeName}
-                        </Text>
+                      {/* Store Name - Split into lines for iOS */}
+                      <View style={styles.storeNameColumn}>
+                        <View style={styles.storeNameRow}>
+                          <View
+                            style={[
+                              styles.storeColorDot,
+                              { backgroundColor: getStoreColor(storeName) }
+                            ]}
+                          />
+                          {Platform.OS === 'ios' ? (
+                            // iOS: Split store name into multiple lines
+                            <View style={styles.storeNameTextContainer}>
+                              {storeName.split(' ').map((word, wordIndex) => (
+                                <Text
+                                  key={wordIndex}
+                                  style={[styles.storeCardNameIOS, { color: colors.text }]}
+                                >
+                                  {word}
+                                </Text>
+                              ))}
+                            </View>
+                          ) : (
+                            <Text style={[styles.storeCardName, { color: colors.text }]}>
+                              {storeName}
+                            </Text>
+                          )}
+                        </View>
                         {(isPromo || hasPromo) && (
-                          <View style={[styles.promoBadgeLarge, { backgroundColor: '#ef4444' }]}>
+                          <View style={[styles.promoBadgeLarge, { backgroundColor: '#ef4444', marginTop: 4, alignSelf: 'flex-start', marginLeft: 20 }]}>
                             <Text style={styles.promoBadgeText}>PROMO</Text>
                           </View>
                         )}
-                        {/* Bookmark Button */}
-                        <TouchableOpacity
-                          style={styles.modalBookmarkButton}
-                          onPress={handleBookmarkPress}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                          <MaterialIcons
-                            name={productIsSaved ? 'bookmark' : 'bookmark-border'}
-                            size={24}
-                            color={productIsSaved ? '#10B981' : colors.text}
-                          />
-                        </TouchableOpacity>
                       </View>
+
+                      {/* Bookmark Button - Centered between store name and price */}
+                      <TouchableOpacity
+                        style={styles.modalBookmarkButtonCentered}
+                        onPress={handleBookmarkPress}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <MaterialIcons
+                          name={productIsSaved ? 'bookmark' : 'bookmark-border'}
+                          size={28}
+                          color={productIsSaved ? '#10B981' : colors.text}
+                        />
+                      </TouchableOpacity>
+
+                      {/* Price Column */}
                       <View style={styles.priceColumn}>
                         {hasPromo && originalPrice !== displayPrice && (
                           <Text style={[styles.previousPriceLarge, { color: colors.error }]}>
@@ -823,6 +793,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.5,
   },
+  brandText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
   productName: {
     fontSize: 22,
     fontWeight: 'bold',
@@ -907,20 +885,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  storeNameColumn: {
+    flex: 1,
+    maxWidth: Platform.OS === 'ios' ? 100 : undefined,
+  },
   storeNameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
+    alignItems: Platform.OS === 'ios' ? 'flex-start' : 'center',
   },
   storeColorDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
     marginRight: 8,
+    marginTop: Platform.OS === 'ios' ? 3 : 0,
+  },
+  storeNameTextContainer: {
+    flexDirection: 'column',
   },
   storeCardName: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  storeCardNameIOS: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  modalBookmarkButtonCentered: {
+    paddingHorizontal: 16,
+    alignSelf: 'center',
   },
   promoBadgeLarge: {
     paddingHorizontal: 8,

@@ -3,15 +3,17 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import AuthScreen from '../components/AuthScreen';
+import StoreSelectionScreen from '../components/StoreSelectionScreen';
 import { AppDataProvider } from '../contexts/AppDataContext';
 import { SavedItemsProvider } from '../contexts/SavedItemsContext';
+import { StorePreferencesProvider, useStorePreferences } from '../contexts/StorePreferencesContext';
 import AuthService from '../services/AuthService';
 import DataCacheService from '../services/DataCacheService';
 import ShoppingListService from '../services/ShoppingListService';
@@ -211,32 +213,79 @@ const loadingStyles = StyleSheet.create({
   },
 });
 
+// Inner component that uses store preferences hook
+function AppContent({
+  colorScheme,
+  isAuthenticated,
+  handleAuthSuccess
+}: {
+  colorScheme: 'light' | 'dark' | null;
+  isAuthenticated: boolean | null;
+  handleAuthSuccess: () => Promise<void>;
+}) {
+  const { hasSelectedStores, selectedStores, isLoading: storesLoading } = useStorePreferences();
+  const [storeSelectionKey, setStoreSelectionKey] = useState(0);
+  const [dataLoadingMessage, setDataLoadingMessage] = useState('Loading your savings...');
+  const [isDataReady, setIsDataReady] = useState(false);
+
+  // Get selected store names for filtering
+  const selectedStoreNames = useMemo(() => {
+    return selectedStores?.map(store => store.name) || null;
+  }, [selectedStores]);
+
+  // Force re-render when store selection is complete
+  const handleStoreSelectionComplete = useCallback(() => {
+    console.log('[AppContent] Store selection completed, refreshing...');
+    setStoreSelectionKey(prev => prev + 1);
+  }, []);
+
+  // Loading state - checking authentication or stores
+  if (isAuthenticated === null || (isAuthenticated && storesLoading)) {
+    return <KipriLoadingScreen loadingMessage={
+      isAuthenticated === null ? "Checking session..." : "Loading your stores..."
+    } />;
+  }
+
+  // Not authenticated - show auth screen
+  if (!isAuthenticated) {
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  // Authenticated but no stores selected - show store selection screen
+  if (!hasSelectedStores) {
+    return <StoreSelectionScreen onComplete={handleStoreSelectionComplete} />;
+  }
+
+  // Authenticated and has stores - show main app with filtered data
+  return (
+    <AppDataProvider
+      selectedStoreNames={selectedStoreNames}
+      onLoadingMessage={setDataLoadingMessage}
+      onReady={() => setIsDataReady(true)}
+    >
+      {!isDataReady ? (
+        <KipriLoadingScreen loadingMessage={dataLoadingMessage} />
+      ) : (
+        <>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+        </>
+      )}
+    </AppDataProvider>
+  );
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [appIsReady, setAppIsReady] = useState(false);
-  const [dataIsReady, setDataIsReady] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('Loading your savings...');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const startTimeRef = useRef<number>(Date.now());
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
   });
-
-  // Handle when data is ready - enforce minimum 3 second splash
-  const handleDataReady = useCallback(async () => {
-    const elapsed = Date.now() - startTimeRef.current;
-    const MIN_SPLASH_TIME = 3000; // 3 seconds minimum
-
-    if (elapsed < MIN_SPLASH_TIME) {
-      // Wait remaining time to ensure at least 3 seconds total
-      const remainingTime = MIN_SPLASH_TIME - elapsed;
-      console.log(`[RootLayout] Data ready in ${elapsed}ms, waiting additional ${remainingTime}ms`);
-      await new Promise(resolve => setTimeout(resolve, remainingTime));
-    }
-
-    console.log('[RootLayout] Data preload complete, app is now ready');
-    setDataIsReady(true);
-  }, []);
 
   // Check authentication session on start
   useEffect(() => {
@@ -250,8 +299,12 @@ export default function RootLayout() {
           console.log('[RootLayout] User authenticated, syncing wishlist...');
           await ShoppingListService.getInstance().loadItems();
         }
-      } catch (e) {
-        console.error('[RootLayout] Auth check error:', e);
+      } catch (e: any) {
+        console.log('[RootLayout] Auth check error, signing out:', e?.message || e);
+        // If refresh token is invalid, clear the stale session
+        if (e?.message?.includes('Refresh Token') || e?.name === 'AuthApiError') {
+          try { await AuthService.signOut(); } catch (_) {}
+        }
         setIsAuthenticated(false);
       }
     }
@@ -305,52 +358,32 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Hide the native splash screen once data is ready
+  // Hide the native splash screen once app is ready
   const onLayoutRootView = useCallback(async () => {
-    if (dataIsReady) {
+    if (appIsReady) {
       // This tells the splash screen to hide immediately
       await SplashScreen.hideAsync();
     }
-  }, [dataIsReady]);
+  }, [appIsReady]);
 
   // Show the custom loading screen while fonts are loading
   if (!loaded || !appIsReady) {
-    return <KipriLoadingScreen loadingMessage={loadingMessage} />;
-  }
-
-  // Show the custom loading screen while data is preloading
-  if (!dataIsReady) {
-    return (
-      <AppDataProvider
-        onReady={handleDataReady}
-        onLoadingMessage={setLoadingMessage}
-      >
-        <KipriLoadingScreen loadingMessage={loadingMessage} />
-      </AppDataProvider>
-    );
+    return <KipriLoadingScreen loadingMessage="Loading your savings..." />;
   }
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <AppDataProvider>
-        <SavedItemsProvider>
+      <SavedItemsProvider>
+        <StorePreferencesProvider>
           <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
-            {isAuthenticated === null ? (
-              <KipriLoadingScreen loadingMessage="Checking session..." />
-            ) : !isAuthenticated ? (
-              <AuthScreen onAuthSuccess={handleAuthSuccess} />
-            ) : (
-              <>
-                <Stack>
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  <Stack.Screen name="+not-found" />
-                </Stack>
-                <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-              </>
-            )}
+            <AppContent
+              colorScheme={colorScheme}
+              isAuthenticated={isAuthenticated}
+              handleAuthSuccess={handleAuthSuccess}
+            />
           </ThemeProvider>
-        </SavedItemsProvider>
-      </AppDataProvider>
+        </StorePreferencesProvider>
+      </SavedItemsProvider>
     </View>
   );
 }

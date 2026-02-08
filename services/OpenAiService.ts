@@ -1,4 +1,6 @@
-import OpenAI from 'openai';
+// Get Supabase URL from environment
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 export interface FoodCategoryResult {
   isFood: boolean;
@@ -12,263 +14,109 @@ export interface FoodCategories {
   [key: string]: string[];
 }
 
+/**
+ * OpenAI Service - Now uses Supabase Edge Functions for secure API access
+ * API keys are stored securely on the server, not in the app
+ */
 class OpenAiService {
-  private openai: OpenAI | null = null;
-  
+  private baseUrl: string;
+  private headers: Record<string, string>;
+
   // App's allowed categories - ChatGPT must only use these exact values
   private readonly allowedCategories = [
     'grown', 'meat', 'wheat', 'dairy', 'liquid', 'frozen', 'snacks', 'miscellaneous'
   ];
 
   constructor() {
-    this.initializeClient();
-  }
-
-
-
-  private initializeClient() {
-    try {
-      const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
-      
-      if (!apiKey) {
-        console.error('OpenAI API key not configured');
-        return;
-      }
-
-      this.openai = new OpenAI({
-        apiKey: apiKey,
-      });
-      
-      console.log('OpenAI client initialized successfully');
-    } catch (error) {
-      console.error('Failed to initialize OpenAI client:', error);
-    }
+    this.baseUrl = `${SUPABASE_URL}/functions/v1`;
+    this.headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    };
+    console.log('OpenAI Service - Using secure Edge Functions');
   }
 
   async categorizeText(text: string): Promise<FoodCategoryResult> {
     try {
-      if (!this.openai) {
-        throw new Error('OpenAI client not initialized');
-      }
-
-      const prompt = `
-        Analyze the following text and determine if it describes a food or grocery item.
-        If it is a food item, categorize it using ONLY one of these exact categories.
-
-        Text: "${text}"
-
-        ALLOWED CATEGORIES (use ONLY these exact values):
-        ${this.allowedCategories.join(', ')}
-
-        CRITICAL: You MUST choose one of the exact categories above. Do not create new categories or modify these names.
-
-        Respond with a JSON object containing:
-        - isFood: boolean (true if this is a food/grocery item)
-        - category: string (MUST be exactly one of: ${this.allowedCategories.join(', ')})
-        - confidence: number (0.0 to 1.0)
-        - description: string (brief explanation)
-
-        Example responses:
-        {
-          "isFood": true,
-          "category": "dairy",
-          "confidence": 0.95,
-          "description": "Fresh dairy milk product"
-        }
-
-        {
-          "isFood": true,
-          "category": "meat",
-          "confidence": 0.90,
-          "description": "Fresh chicken meat"
-        }
-
-        {
-          "isFood": true,
-          "category": "grown",
-          "confidence": 0.85,
-          "description": "Fresh vegetables"
-        }
-      `;
-
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 300,
-        temperature: 0.1,
+      const response = await fetch(`${this.baseUrl}/categorize-products`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          texts: text,
+          mode: 'single',
+        }),
       });
 
-      const result = response.choices[0].message.content;
-      
-      if (!result) {
-        throw new Error('No response from OpenAI');
+      if (!response.ok) {
+        throw new Error('Failed to categorize text');
       }
 
-      let parsedResult;
-      try {
-        // Clean up the response if it has markdown formatting
-        let cleanResult = result.trim();
-        if (cleanResult.startsWith('```json')) {
-          cleanResult = cleanResult.slice(7);
-        }
-        if (cleanResult.endsWith('```')) {
-          cleanResult = cleanResult.slice(0, -3);
-        }
-        
-        parsedResult = JSON.parse(cleanResult.trim());
-      } catch (parseError) {
-        console.error('Failed to parse OpenAI response:', result);
-        throw new Error('Invalid JSON response from OpenAI');
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        return result.data;
       }
 
-      // Validate that the category is one of the allowed categories
-      const category = parsedResult.category || 'miscellaneous';
-      const validatedCategory = this.allowedCategories.includes(category) ? category : 'miscellaneous';
-
-      return {
-        isFood: parsedResult.isFood || false,
-        category: validatedCategory,
-        confidence: parsedResult.confidence || 0.5,
-        description: parsedResult.description,
-      };
+      // Fallback to quick categorization
+      return this.quickCategorize(text);
 
     } catch (error) {
-      console.error('OpenAI categorization error:', error);
-      return {
-        isFood: false,
-        category: 'Unknown',
-        confidence: 0.0,
-        description: 'Failed to analyze',
-      };
+      console.error('Categorization error:', error);
+      return this.quickCategorize(text);
     }
   }
 
   async batchCategorizeTexts(texts: string[]): Promise<FoodCategoryResult[]> {
     try {
-      if (!this.openai) {
-        throw new Error('OpenAI client not initialized');
-      }
-
-      const textList = texts.map((text, index) => `${index + 1}. "${text}"`).join('\n');
-
-      const prompt = `
-        Analyze the following list of texts and determine if each describes a food or grocery item.
-        If it is a food item, categorize it using ONLY the allowed categories below.
-
-        Texts:
-        ${textList}
-
-        ALLOWED CATEGORIES (use ONLY these exact values):
-        ${this.allowedCategories.join(', ')}
-
-        CRITICAL: You MUST choose one of the exact categories above. Do not create new categories or modify these names.
-
-        Respond with a JSON array where each object contains:
-        - index: number (corresponding to input order)
-        - isFood: boolean (true if this is a food/grocery item)
-        - category: string (MUST be exactly one of: ${this.allowedCategories.join(', ')})
-        - confidence: number (0.0 to 1.0)
-        - description: string (brief explanation)
-
-        Return ONLY the JSON array, no additional text.
-      `;
-
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 1000,
-        temperature: 0.1,
+      const response = await fetch(`${this.baseUrl}/categorize-products`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          texts: texts,
+          mode: 'batch',
+        }),
       });
 
-      const result = response.choices[0].message.content;
-      
-      if (!result) {
-        throw new Error('No response from OpenAI');
+      if (!response.ok) {
+        throw new Error('Failed to categorize texts');
       }
 
-      let parsedResult;
-      try {
-        // Clean up the response
-        let cleanResult = result.trim();
-        if (cleanResult.startsWith('```json')) {
-          cleanResult = cleanResult.slice(7);
-        }
-        if (cleanResult.endsWith('```')) {
-          cleanResult = cleanResult.slice(0, -3);
-        }
-        
-        parsedResult = JSON.parse(cleanResult.trim());
-      } catch (parseError) {
-        console.error('Failed to parse OpenAI batch response:', result);
-        // Fallback to individual processing
-        return await Promise.all(texts.map(text => this.categorizeText(text)));
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        return result.data;
       }
 
-            // Ensure we have results for all inputs
-      const results: FoodCategoryResult[] = new Array(texts.length);
-
-      for (const item of parsedResult) {
-        const index = (item.index || 1) - 1;
-        if (index >= 0 && index < texts.length) {
-          // Validate that the category is one of the allowed categories
-          const category = item.category || 'miscellaneous';
-          const validatedCategory = this.allowedCategories.includes(category) ? category : 'miscellaneous';
-
-          results[index] = {
-            isFood: item.isFood || false,
-            category: validatedCategory,
-            confidence: item.confidence || 0.5,
-            description: item.description,
-          };
-        }
-      }
-
-      // Fill any missing results
-      for (let i = 0; i < results.length; i++) {
-        if (!results[i]) {
-          results[i] = {
-            isFood: false,
-            category: 'Unknown',
-            confidence: 0.0,
-            description: 'Failed to analyze',
-          };
-        }
-      }
-
-      return results;
+      // Fallback to quick categorization
+      return texts.map(text => this.quickCategorize(text));
 
     } catch (error) {
-      console.error('OpenAI batch categorization error:', error);
-      // Fallback to individual processing
-      return await Promise.all(texts.map(text => this.categorizeText(text)));
+      console.error('Batch categorization error:', error);
+      return texts.map(text => this.quickCategorize(text));
     }
   }
 
   async testConnection(): Promise<boolean> {
     try {
-      if (!this.openai) {
-        return false;
-      }
-
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          { role: 'user', content: 'Say "OpenAI connection successful" if you can read this message.' }
-        ],
-        max_tokens: 50,
+      const response = await fetch(`${this.baseUrl}/categorize-products`, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({
+          texts: 'milk',
+          mode: 'single',
+        }),
       });
 
-      const result = response.choices[0].message.content;
-      console.log('OpenAI test response:', result);
-      
-      return result?.includes('connection successful') || false;
-      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Edge Function test response:', result);
+        return result.success === true;
+      }
+
+      return false;
+
     } catch (error) {
-      console.error('OpenAI connection test failed:', error);
+      console.error('Edge Function connection test failed:', error);
       return false;
     }
   }

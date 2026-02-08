@@ -14,6 +14,29 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     },
 });
 
+// Handle invalid refresh tokens on startup - clear stale session so user can re-login
+supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED' && !session) {
+        console.log('Token refresh failed, clearing stale session');
+        supabase.auth.signOut();
+    }
+});
+
+// Proactively check for stale sessions on init
+(async () => {
+    try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+            console.log('Stale session detected, clearing:', error.message);
+            await AsyncStorage.removeItem('sb-' + supabaseUrl.split('//')[1]?.split('.')[0] + '-auth-token');
+            await supabase.auth.signOut();
+        }
+    } catch (e) {
+        console.log('Session check error, clearing auth state:', e);
+        await supabase.auth.signOut();
+    }
+})();
+
 class AuthService {
     private static instance: AuthService;
 
@@ -51,20 +74,11 @@ class AuthService {
             if (error) throw error;
             if (!data.user) throw new Error('Sign up failed - no user returned');
 
-            // 2. Create the Profile record
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .insert({
-                    id: data.user.id,
-                    phone_number: phoneNumber,
-                });
+            // Profile is now automatically created by database trigger
+            // Wait a moment for the trigger to complete
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            if (profileError) {
-                console.error('Error creating profile:', profileError);
-                // We don't throw here because the auth account was created successfully
-            }
-
-            // 3. Create the empty Wishlist record
+            // Create the empty Wishlist record
             const { error: wishlistError } = await supabase
                 .from('user_wishlists')
                 .insert({
@@ -111,10 +125,11 @@ class AuthService {
     public async signOut() {
         try {
             const { error } = await supabase.auth.signOut();
-            if (error) throw error;
+            if (error) {
+                console.log('AuthService: signOut had error (session may already be invalid):', error.message);
+            }
         } catch (error) {
-            console.error('AuthService: signOut error:', error);
-            throw error;
+            console.log('AuthService: signOut error (non-critical):', error);
         }
     }
 

@@ -157,7 +157,7 @@ const ShoppingListScreen = () => {
     () =>
       filteredItems.length > 0 ? (
         <View style={[styles.footerContainer, { backgroundColor: colors.card }]}>
-          <View style={styles.footerContent}>
+          <View style={Platform.OS === 'ios' ? styles.footerContentIOS : styles.footerContent}>
             <Text style={[styles.footerLabel, { color: colors.text }]}>
               Estimated Total ({filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}):
             </Text>
@@ -344,6 +344,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  footerContentIOS: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   footerLabel: {
     fontSize: 16,

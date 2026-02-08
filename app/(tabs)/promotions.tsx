@@ -2,6 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,10 +18,10 @@ import {
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { STORE_INFO } from '../../constants/categories';
 import { filterPromotionsByMainList } from '../../constants/mainProductList';
 import { Promotion } from '../../types';
 import { useAppData } from '../../contexts/AppDataContext';
+import { useStorePreferences } from '../../contexts/StorePreferencesContext';
 
 
 const PromotionsScreen = () => {
@@ -30,6 +31,32 @@ const PromotionsScreen = () => {
 
   // Use preloaded promotions from AppDataContext
   const { promotions: allPromotions, isLoading: contextLoading, refresh } = useAppData();
+
+  // Get user's selected stores from StorePreferencesContext
+  const { selectedStores } = useStorePreferences();
+
+  // Build store info dynamically from user's selected stores
+  const storeInfo = useMemo(() => {
+    if (!selectedStores || selectedStores.length === 0) {
+      return [];
+    }
+
+    // Map selected stores to store info format
+    const stores = selectedStores.map(store => ({
+      name: store.name,
+      icon: store.icon || '🏪',
+      color: store.color || '#4CAF50',
+    }));
+
+    // Add "All Products" option at the end
+    stores.push({
+      name: 'Tous Les Produits',
+      icon: '🏪',
+      color: '#4CAF50',
+    });
+
+    return stores;
+  }, [selectedStores]);
 
   // Helper function to convert hex to rgba
   const hexToRgba = (hex: string, opacity: number) => {
@@ -156,6 +183,7 @@ const PromotionsScreen = () => {
   };
 
   const selectStore = async (store: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedStore(store);
     setShowStoreSelection(false);
     setSelectedCategory('All');
@@ -163,6 +191,7 @@ const PromotionsScreen = () => {
   };
 
   const showStoreSelectionScreen = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowStoreSelection(true);
     setSelectedStore(null);
     setIsLoading(false);
@@ -211,70 +240,84 @@ const PromotionsScreen = () => {
         colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
         style={[styles.container, { paddingTop: insets.top }]}
       >
+        {/* Fixed Header */}
         <Animated.View style={[
-          styles.storeSelectionContainer,
-          { 
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
+          styles.storeSelectionHeader,
+          { opacity: fadeAnim }
         ]}>
-          <View style={styles.storeSelectionHeader}>
-            <Text style={[styles.kipriLogoLarge, { color: colors.primary }]}>Kipri</Text>
-            <Text style={[styles.storeSelectionTitle, { color: colors.text }]}>Deals</Text>
+          <View style={styles.headerTitleContainer}>
+            <Text style={[styles.kipriLogo, { color: colors.primary }]}>Kipri</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.text }]}>Deals</Text>
           </View>
-          <Text style={[styles.storeSelectionSubtitle, { color: colors.text, opacity: 0.7 }]}>
-            Choose your store to view latest promotions
-          </Text>
-          
+        </Animated.View>
+
+        {/* Scrollable Store List */}
+        <ScrollView
+          style={styles.storeScrollView}
+          contentContainerStyle={styles.storeScrollContent}
+          showsVerticalScrollIndicator={false}
+          bounces={true}
+          alwaysBounceVertical={true}
+        >
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+            <Text style={[styles.storeSelectionSubtitle, { color: colors.text, opacity: 0.7 }]}>
+              Choose your store to view latest promotions
+            </Text>
+          </Animated.View>
+
           <View style={styles.storeButtonsContainer}>
-            {STORE_INFO.map((store, index) => (
+            {storeInfo.map((store, index) => (
               <Animated.View
                 key={store.name}
                 style={[
                   styles.storeButtonWrapper,
-                  { 
+                  {
                     opacity: fadeAnim,
-                    transform: [{ 
+                    transform: [{
                       translateY: slideAnim.interpolate({
                         inputRange: [0, 30],
-                        outputRange: [0, 50 + (index * 20)]
+                        outputRange: [0, 20 + (index * 10)]
                       })
                     }]
                   }
                 ]}
               >
-                <Pressable
+                <TouchableOpacity
                   onPress={() => selectStore(store.name)}
-                  android_ripple={null}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.storeCard,
+                    {
+                      backgroundColor: colors.card,
+                      shadowColor: store.color,
+                    }
+                  ]}
                 >
                   <View style={[
-                    styles.newStoreButton,
-                    {
-                      backgroundColor: hexToRgba(store.color, 0.12),
-                      ...(Platform.OS === 'android' && {
-                        borderWidth: 0,
-                        borderColor: 'transparent',
-                        needsOffscreenAlphaCompositing: false,
-                        overflow: 'visible',
-                        elevation: 0,
-                      })
-                    }
+                    styles.storeCardIconContainer,
+                    { backgroundColor: hexToRgba(store.color, 0.15) }
                   ]}>
-                    <View style={[
-                      styles.newStoreIconContainer,
-                      { backgroundColor: hexToRgba(store.color, 0.18) }
-                    ]}>
-                      <Text style={styles.storeIcon}>{store.icon}</Text>
-                    </View>
-                    <Text style={[styles.storeButtonText, { color: store.color }]}>
+                    <Text style={styles.storeCardIcon}>{store.icon}</Text>
+                  </View>
+                  <View style={styles.storeCardContent}>
+                    <Text style={[styles.storeCardName, { color: colors.text }]}>
                       {store.name}
                     </Text>
+                    <Text style={[styles.storeCardHint, { color: colors.text, opacity: 0.5 }]}>
+                      Tap to view deals
+                    </Text>
                   </View>
-                </Pressable>
+                  <View style={[styles.storeCardArrow, { backgroundColor: hexToRgba(store.color, 0.1) }]}>
+                    <Text style={[styles.storeCardArrowText, { color: store.color }]}>{'>'}</Text>
+                  </View>
+                </TouchableOpacity>
               </Animated.View>
             ))}
           </View>
-        </Animated.View>
+
+          {/* Bottom spacing */}
+          <View style={{ height: Platform.OS === 'ios' ? 120 : 80 }} />
+        </ScrollView>
       </LinearGradient>
     );
   }
@@ -486,17 +529,93 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // New scrollable store selection styles
+  storeSelectionHeader: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  kipriLogo: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    opacity: 0.7,
+  },
+  storeScrollView: {
+    flex: 1,
+  },
+  storeScrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  storeSelectionSubtitle: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  storeButtonsContainer: {
+    gap: 12,
+  },
+  storeButtonWrapper: {
+    marginBottom: 4,
+  },
+  storeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  storeCardIconContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeCardIcon: {
+    fontSize: 26,
+  },
+  storeCardContent: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  storeCardName: {
+    fontSize: 17,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  storeCardHint: {
+    fontSize: 13,
+  },
+  storeCardArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storeCardArrowText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  // Legacy styles (kept for compatibility)
   storeSelectionContainer: {
     flex: 1,
     padding: 24,
     justifyContent: 'center',
-  },
-  storeSelectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: 10,
-    marginBottom: 12,
   },
   kipriLogoLarge: {
     fontSize: 36,
@@ -507,17 +626,6 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  storeSelectionSubtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 60,
-  },
-  storeButtonsContainer: {
-    gap: 20,
-  },
-  storeButtonWrapper: {
-    marginBottom: 20,
   },
   storeButton: {
     height: 80,

@@ -1,42 +1,152 @@
 import { Tabs } from 'expo-router';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
-import { Platform, Text, View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
-import TabBarBackground from '@/components/ui/TabBarBackground';
-import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
-// Kipri branded header title component
-const KipriHeaderTitle = ({ title, colorScheme }: { title: string; colorScheme: 'light' | 'dark' | null }) => {
-  const colors = Colors[colorScheme ?? 'light'];
+// Custom Tab Bar Component
+function CustomTabBar({ state, descriptors, navigation }: any) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+
+  const tabs = [
+    { name: 'index', icon: 'shopping-bag', iconOutline: 'shopping-bag' },
+    { name: 'promotions', icon: 'local-offer', iconOutline: 'local-offer' },
+    { name: 'scanner', icon: 'add', iconOutline: 'add', isCenter: true },
+    { name: 'shoppinglist', icon: 'bookmark', iconOutline: 'bookmark-outline' },
+    { name: 'settings', icon: 'settings', iconOutline: 'settings' },
+  ];
+
   return (
-    <View style={headerStyles.headerTitleContainer}>
-      <Text style={[headerStyles.kipriText, { color: colors.primary }]}>Kipri</Text>
-      <Text style={[headerStyles.separatorText, { color: colors.text, opacity: 0.3 }]}> | </Text>
-      <Text style={[headerStyles.screenTitle, { color: colors.text }]}>{title}</Text>
+    <View style={[
+      styles.tabBarContainer,
+      {
+        bottom: Math.max(insets.bottom, 16),
+        backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+      }
+    ]}>
+      {state.routes.map((route: any, index: number) => {
+        const isFocused = state.index === index;
+        const tab = tabs.find(t => t.name === route.name) || tabs[0];
+
+        const onPress = () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
+          }
+        };
+
+        // Center raised + button
+        if (tab.isCenter) {
+          return (
+            <Pressable
+              key={route.key}
+              onPress={onPress}
+              style={styles.centerTabButton}
+            >
+              <View style={[
+                styles.centerButtonCircle,
+                { backgroundColor: '#10b981' }
+              ]}>
+                <MaterialIcons
+                  name="add"
+                  size={32}
+                  color="#FFFFFF"
+                />
+              </View>
+            </Pressable>
+          );
+        }
+
+        return (
+          <Pressable
+            key={route.key}
+            onPress={onPress}
+            style={styles.tabButton}
+          >
+            <View style={styles.iconWrapper}>
+              <MaterialIcons
+                name={tab.icon as any}
+                size={24}
+                color={isFocused
+                  ? (isDark ? '#FFFFFF' : '#000000')
+                  : (isDark ? '#8E8E93' : '#8E8E93')
+                }
+              />
+              {isFocused && (
+                <View style={[
+                  styles.activeIndicator,
+                  { backgroundColor: isDark ? '#FFFFFF' : '#000000' }
+                ]} />
+              )}
+            </View>
+          </Pressable>
+        );
+      })}
     </View>
   );
-};
+}
 
-const headerStyles = StyleSheet.create({
-  headerTitleContainer: {
+const styles = StyleSheet.create({
+  tabBarContainer: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    height: 70,
+    borderRadius: 35,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-around',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  kipriText: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
   },
-  separatorText: {
-    fontSize: 18,
-    fontWeight: '300',
+  centerTabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    marginTop: -30,
   },
-  screenTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  centerButtonCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activeIndicator: {
+    width: 20,
+    height: 3,
+    borderRadius: 2,
+    marginTop: 5,
   },
 });
 
@@ -45,114 +155,21 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: '#6366F1',
-        tabBarInactiveTintColor: Colors[colorScheme ?? 'light'].tabIconDefault,
-        headerShown: false, // Keep false - we handle headers in individual screens
-        tabBarButton: HapticTab,
-        tabBarBackground: TabBarBackground,
+        headerShown: false,
+        tabBarShowLabel: false,
         sceneContainerStyle: {
-          paddingBottom: 104, // Space for floating tab bar
           backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#f3f3f3',
+          paddingBottom: 100,
         },
-        tabBarStyle: Platform.select({
-          ios: {
-            height: 80,
-            paddingBottom: 12,
-            paddingTop: 20,
-            paddingHorizontal: 16,
-            marginHorizontal: 16,
-            marginBottom: 12,
-            backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-            borderTopWidth: 0,
-            borderRadius: 30,
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.25,
-            shadowRadius: 20,
-          },
-          default: {
-            height: 80,
-            paddingBottom: 12,
-            paddingTop: 20,
-            paddingHorizontal: 16,
-            marginHorizontal: 16,
-            marginBottom: 12,
-            backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#ffffff',
-            borderTopWidth: 0,
-            borderRadius: 30,
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            elevation: 16,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.25,
-            shadowRadius: 20,
-          }
-        }),
-      }}>
-      <Tabs.Screen
-        name="promotions"
-        options={{
-          title: 'Promotions',
-          tabBarIcon: ({ color, focused }) => (
-            <IconSymbol
-              size={32}
-              name="tag.fill"
-              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
-            />
-          ),
-          tabBarLabel: () => null,
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Prices',
-          tabBarIcon: ({ color, focused }) => (
-            <IconSymbol
-              size={32}
-              name="bag.fill"
-              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
-            />
-          ),
-          tabBarLabel: () => null,
-        }}
-      />
-      <Tabs.Screen
-        name="shoppinglist"
-        options={{
-          title: 'Shopping List',
-          tabBarIcon: ({ color, focused }) => (
-            <IconSymbol
-              size={32}
-              name="bookmark.fill"
-              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
-            />
-          ),
-          tabBarLabel: () => null,
-        }}
-      />
-      <Tabs.Screen
-        name="scanner"
-        options={{
-          title: 'Scanner',
-          tabBarIcon: ({ color, focused }) => (
-            <IconSymbol
-              size={32}
-              name="photo.camera.fill"
-              color={focused ? '#6366F1' : (colorScheme === 'dark' ? '#9CA3AF' : '#6B7280')}
-            />
-          ),
-          tabBarLabel: () => null,
-        }}
-      />
+      }}
+    >
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="promotions" />
+      <Tabs.Screen name="scanner" />
+      <Tabs.Screen name="shoppinglist" />
+      <Tabs.Screen name="settings" />
     </Tabs>
   );
 }

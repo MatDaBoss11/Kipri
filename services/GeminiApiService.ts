@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 
 export interface Product {
   product: string; // Database field name
+  brand?: string; // Brand name in CAPITALS (e.g., "NESTLE", "DINA")
   price: string; // Will be converted to numeric(6,2) for database
   size: string; // Required field
   store: string; // Required field

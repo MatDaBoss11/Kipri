@@ -11,13 +11,7 @@ export const CATEGORIES: CategoryInfo[] = [
   { name: 'miscellaneous', emoji: '🧺', displayName: 'Miscellaneous' },
 ];
 
-export const STORES = ['Winners', 'Kingsavers', 'Super U'];
-
-export const STORE_INFO = [
-  { name: 'Super U', icon: '🛒', color: '#2196F3' },
-  { name: 'Winners', icon: '🏆', color: '#FF9800' },
-  { name: 'Kingsavers', icon: '💰', color: '#9C27B0' },
-  { name: 'Tous Les Produits', icon: '🏪', color: '#4CAF50' },
-];
+// STORES array removed - stores now come from database via StoreService
+// STORE_INFO removed - store icons/colors now come from database via StoreService
 
 // Backend URL removed - using integrated services now!

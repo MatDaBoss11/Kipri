@@ -59,6 +59,7 @@ class SupabaseService {
 
       const productsToInsert = products.map(product => ({
         product: product.product, // Map name to product field
+        brand: product.brand?.toUpperCase() || null, // Brand in CAPITALS
         price: parseFloat(product.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0, // Convert to numeric
         size: product.size,
         store: product.store,
@@ -94,6 +95,7 @@ class SupabaseService {
 
       const productToInsert = {
         product: product.product, // Map name to product field
+        brand: product.brand?.toUpperCase() || null, // Brand in CAPITALS
         price: parseFloat(product.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0, // Convert to numeric
         size: product.size,
         store: product.store,
@@ -202,6 +204,7 @@ class SupabaseService {
       const updateData: any = {};
 
       if (updates.product !== undefined) updateData.product = updates.product;
+      if (updates.brand !== undefined) updateData.brand = updates.brand?.toUpperCase() || null;
       if (updates.price !== undefined) updateData.price = parseFloat(updates.price.replace(/[Rs\s]/gi, '').replace(',', '.')) || 0;
       if (updates.size !== undefined) updateData.size = updates.size;
       if (updates.store !== undefined) updateData.store = updates.store;
