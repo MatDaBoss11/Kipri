@@ -8,6 +8,7 @@ import {
   ColorSchemeName,
 } from 'react-native';
 import { CATEGORIES } from '../constants/categories';
+import { Store } from '../types';
 
 export type PriceRange = 'under50' | '50to100' | '100to200' | 'over200' | null;
 
@@ -20,13 +21,8 @@ interface ShoppingListFiltersProps {
   setPriceRange: (range: PriceRange) => void;
   colors: any;
   colorScheme: ColorSchemeName;
+  userStores: Store[];
 }
-
-const STORES = [
-  { name: 'Winners', color: '#FF9800' },
-  { name: 'Super U', color: '#2196F3' },
-  { name: 'Kingsavers', color: '#9C27B0' },
-];
 
 const PRICE_RANGES: { key: PriceRange; label: string }[] = [
   { key: 'under50', label: 'Under Rs 50' },
@@ -44,6 +40,7 @@ const ShoppingListFilters: React.FC<ShoppingListFiltersProps> = ({
   setPriceRange,
   colors,
   colorScheme,
+  userStores,
 }) => {
   const toggleStore = (storeName: string) => {
     if (selectedStores.includes(storeName)) {
@@ -85,11 +82,11 @@ const ShoppingListFilters: React.FC<ShoppingListFiltersProps> = ({
         contentContainerStyle={styles.scrollContent}
       >
         {/* Store Filters */}
-        {STORES.map((store) => {
+        {userStores.map((store) => {
           const isSelected = selectedStores.includes(store.name);
           return (
             <TouchableOpacity
-              key={store.name}
+              key={store.id}
               style={[
                 styles.filterChip,
                 {

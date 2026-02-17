@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -7,8 +7,9 @@ import {
     ActivityIndicator,
     Alert,
     StyleSheet,
+    Animated,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import MapView, { Marker, Callout, Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -21,60 +22,92 @@ interface StoreSelectionScreenProps {
     onComplete: () => void;
 }
 
+/** Initial region showing the north of Mauritius where the stores are. */
+const MAURITIUS_REGION: Region = {
+    latitude: -20.025,
+    longitude: 57.62,
+    latitudeDelta: 0.12,
+    longitudeDelta: 0.12,
+};
+
+// ─── Component ───────────────────────────────────────────────
+
 const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
     const insets = useSafeAreaInsets();
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? 'light'];
     const { saveStorePreferences } = useStorePreferences();
+    const mapRef = useRef<MapView>(null);
 
-    const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
-    const [availableStores, setAvailableStores] = useState<Store[]>([]);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [stores, setStores] = useState<Store[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
+    // Toast state
+    const [toastMsg, setToastMsg] = useState<string | null>(null);
+    const toastOpacity = useRef(new Animated.Value(0)).current;
+
+    // ── Fetch stores from database ──────────────────────────
     useEffect(() => {
-        const fetchStores = async () => {
+        (async () => {
             try {
                 setIsLoading(true);
-                const stores = await StoreService.getInstance().getAllStores();
-                setAvailableStores(stores);
+                const dbStores = await StoreService.getInstance().getAllStores();
+                // Only show stores that have coordinates
+                const withCoords = dbStores.filter(s => s.latitude != null && s.longitude != null);
+                setStores(withCoords);
+
+                // Fit the map so every pin is visible
+                if (withCoords.length > 0 && mapRef.current) {
+                    setTimeout(() => {
+                        mapRef.current?.fitToCoordinates(
+                            withCoords.map(s => ({ latitude: s.latitude!, longitude: s.longitude! })),
+                            { edgePadding: { top: 150, right: 60, bottom: 280, left: 60 }, animated: true },
+                        );
+                    }, 500);
+                }
             } catch (error) {
                 console.error('Error fetching stores:', error);
                 Alert.alert('Error', 'Failed to load stores. Please try again.');
             } finally {
                 setIsLoading(false);
             }
-        };
-
-        fetchStores();
+        })();
     }, []);
 
-    const handleStorePress = (storeId: string) => {
-        if (selectedStoreIds.includes(storeId)) {
-            // Remove from selection
-            setSelectedStoreIds(prev => prev.filter(id => id !== storeId));
-        } else if (selectedStoreIds.length < 3) {
-            // Add to selection
-            setSelectedStoreIds(prev => [...prev, storeId]);
+    // ── Toast helper ────────────────────────────────────────
+    const showToast = (message: string) => {
+        setToastMsg(message);
+        toastOpacity.setValue(0);
+        Animated.sequence([
+            Animated.timing(toastOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+            Animated.delay(2000),
+            Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]).start(() => setToastMsg(null));
+    };
+
+    // ── Selection logic ─────────────────────────────────────
+    const handleMarkerPress = (storeId: string) => {
+        if (selectedIds.includes(storeId)) {
+            setSelectedIds(prev => prev.filter(id => id !== storeId));
+        } else if (selectedIds.length < 3) {
+            setSelectedIds(prev => [...prev, storeId]);
         } else {
-            // Already have 3 selected
-            Alert.alert(
-                'Maximum Reached',
-                'You can only select 3 stores. Unselect one first.'
-            );
+            showToast('You can only select 3 stores. Deselect one first.');
         }
     };
 
-    const handleConfirm = async () => {
-        if (selectedStoreIds.length !== 3) {
-            Alert.alert('Selection Required', 'Please select exactly 3 stores to continue.');
-            return;
-        }
+    const handleRemoveChip = (storeId: string) => {
+        setSelectedIds(prev => prev.filter(id => id !== storeId));
+    };
 
+    // ── Save & continue ─────────────────────────────────────
+    const handleContinue = async () => {
+        if (selectedIds.length !== 3) return;
         try {
             setIsSaving(true);
-            const success = await saveStorePreferences(selectedStoreIds);
-
+            const success = await saveStorePreferences(selectedIds);
             if (success) {
                 onComplete();
             } else {
@@ -88,197 +121,185 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
         }
     };
 
-    const getSelectedStore = (index: number): Store | null => {
-        const storeId = selectedStoreIds[index];
-        if (!storeId) return null;
-        return availableStores.find(s => s.id === storeId) || null;
-    };
+    // ── Derived data ────────────────────────────────────────
+    const selectedStores: Store[] = selectedIds
+        .map(id => stores.find(s => s.id === id))
+        .filter((s): s is Store => !!s);
 
-    const renderSelectedSlot = (index: number) => {
-        const store = getSelectedStore(index);
-        const priority = index + 1;
-
-        return (
-            <View
-                key={`slot-${index}`}
-                style={[
-                    styles.selectedSlot,
-                    {
-                        backgroundColor: store
-                            ? store.color + '20'
-                            : colorScheme === 'dark' ? '#334155' : '#F1F5F9',
-                        borderColor: store
-                            ? store.color
-                            : colorScheme === 'dark' ? '#475569' : '#E2E8F0',
-                    },
-                ]}
-            >
-                <Text style={[styles.priorityBadge, { color: colors.primary }]}>
-                    {priority}
-                </Text>
-                {store ? (
-                    <View style={styles.selectedSlotContent}>
-                        <Text style={styles.selectedSlotIcon}>{store.icon}</Text>
-                        <Text
-                            style={[styles.selectedSlotName, { color: colors.text }]}
-                            numberOfLines={1}
-                        >
-                            {store.name}
-                        </Text>
-                    </View>
-                ) : (
-                    <Text style={[styles.selectedSlotPlaceholder, { color: colors.text }]}>
-                        Select a store
-                    </Text>
-                )}
-            </View>
-        );
-    };
-
-    const renderStoreCard = (store: Store) => {
-        const isSelected = selectedStoreIds.includes(store.id);
-        const selectionIndex = selectedStoreIds.indexOf(store.id);
-
-        return (
-            <TouchableOpacity
-                key={store.id}
-                style={[
-                    styles.storeCard,
-                    {
-                        backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#FFFFFF',
-                        borderColor: isSelected ? store.color : (colorScheme === 'dark' ? '#334155' : '#E2E8F0'),
-                        borderWidth: isSelected ? 2.5 : 1,
-                    },
-                ]}
-                onPress={() => handleStorePress(store.id)}
-                activeOpacity={0.7}
-            >
-                {isSelected && (
-                    <View style={[styles.checkmarkBadge, { backgroundColor: store.color }]}>
-                        <Text style={styles.checkmarkText}>{selectionIndex + 1}</Text>
-                    </View>
-                )}
-                <View
-                    style={[
-                        styles.storeIconContainer,
-                        { backgroundColor: store.color + '20' },
-                    ]}
-                >
-                    <Text style={styles.storeIcon}>{store.icon}</Text>
-                </View>
-                <Text
-                    style={[styles.storeName, { color: colors.text }]}
-                    numberOfLines={1}
-                >
-                    {store.name}
-                </Text>
-                <Text
-                    style={[styles.storeDetails, { color: colors.text }]}
-                    numberOfLines={1}
-                >
-                    {store.chain}{store.location ? ` - ${store.location}` : ''}
-                </Text>
-            </TouchableOpacity>
-        );
-    };
-
+    // ── Loading state ───────────────────────────────────────
     if (isLoading) {
         return (
-            <LinearGradient
-                colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B'] : ['#F8FAFC', '#F1F5F9']}
-                style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
-            >
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                    <Text style={[styles.loadingText, { color: colors.text }]}>
-                        Loading stores...
-                    </Text>
-                </View>
-            </LinearGradient>
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.loadingText, { color: colors.text }]}>
+                    Loading stores...
+                </Text>
+            </View>
         );
     }
 
+    // ── Main render ─────────────────────────────────────────
     return (
-        <LinearGradient
-            colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B'] : ['#F8FAFC', '#F1F5F9']}
-            style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
-        >
-            <View style={styles.content}>
-                {/* Header Section */}
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.primary }]}>
+        <View style={styles.container}>
+            {/* ── Full-screen map ────────────────────────── */}
+            <MapView
+                ref={mapRef}
+                style={styles.map}
+                initialRegion={MAURITIUS_REGION}
+                showsUserLocation={false}
+                showsMyLocationButton={false}
+                toolbarEnabled={false}
+                clusteringEnabled={false}
+            >
+                {stores.map(store => {
+                    const isSelected = selectedIds.includes(store.id);
+                    return (
+                        <Marker
+                            key={store.id}
+                            coordinate={{
+                                latitude: store.latitude!,
+                                longitude: store.longitude!,
+                            }}
+                            pinColor={isSelected ? '#22C55E' : '#EF4444'}
+                            onPress={() => handleMarkerPress(store.id)}
+                            tracksViewChanges={false}
+                            zIndex={isSelected ? 2 : 1}
+                        >
+                            <Callout tooltip={false}>
+                                <View style={styles.callout}>
+                                    <Text style={styles.calloutTitle}>{store.name}</Text>
+                                    <Text style={styles.calloutSub}>
+                                        {store.chain}
+                                        {store.location ? ` \u2022 ${store.location}` : ''}
+                                    </Text>
+                                    <Text style={[
+                                        styles.calloutStatus,
+                                        { color: isSelected ? '#22C55E' : '#94A3B8' },
+                                    ]}>
+                                        {isSelected ? 'Selected' : 'Tap pin to select'}
+                                    </Text>
+                                </View>
+                            </Callout>
+                        </Marker>
+                    );
+                })}
+            </MapView>
+
+            {/* ── Floating header ────────────────────────── */}
+            <View
+                style={[styles.floatingHeader, { top: insets.top + 12 }]}
+                pointerEvents="none"
+            >
+                <View style={[
+                    styles.headerCard,
+                    {
+                        backgroundColor: colorScheme === 'dark'
+                            ? 'rgba(30, 41, 59, 0.92)'
+                            : 'rgba(255, 255, 255, 0.92)',
+                    },
+                ]}>
+                    <Text style={[styles.headerTitle, { color: colors.primary }]}>
                         Choose Your Stores
                     </Text>
-                    <Text style={[styles.subtitle, { color: colors.text }]}>
-                        Select exactly 3 supermarkets to compare prices
+                    <Text style={[styles.headerSubtitle, { color: colors.text }]}>
+                        Tap pins to select 3 stores to compare
                     </Text>
-                    <View style={[styles.counterBadge, { backgroundColor: colors.primary + '20' }]}>
-                        <Text style={[styles.counterText, { color: colors.primary }]}>
-                            {selectedStoreIds.length}/3 selected
-                        </Text>
-                    </View>
                 </View>
-
-                {/* Selected Stores Display */}
-                <View style={styles.selectedStoresContainer}>
-                    {[0, 1, 2].map(index => renderSelectedSlot(index))}
-                </View>
-
-                {/* Store Grid */}
-                <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                >
-                    <View style={styles.storeGrid}>
-                        {availableStores.map(store => renderStoreCard(store))}
-                    </View>
-                </ScrollView>
-
-                {/* Confirm Button */}
-                <TouchableOpacity
-                    style={[
-                        styles.confirmButton,
-                        {
-                            backgroundColor: selectedStoreIds.length === 3
-                                ? colors.primary
-                                : colorScheme === 'dark' ? '#334155' : '#CBD5E1',
-                        },
-                    ]}
-                    onPress={handleConfirm}
-                    disabled={selectedStoreIds.length !== 3 || isSaving}
-                    activeOpacity={0.8}
-                >
-                    {isSaving ? (
-                        <ActivityIndicator color="white" />
-                    ) : (
-                        <Text
-                            style={[
-                                styles.confirmButtonText,
-                                {
-                                    color: selectedStoreIds.length === 3
-                                        ? 'white'
-                                        : colorScheme === 'dark' ? '#64748B' : '#94A3B8',
-                                },
-                            ]}
-                        >
-                            Continue
-                        </Text>
-                    )}
-                </TouchableOpacity>
             </View>
-        </LinearGradient>
+
+            {/* ── Toast message ──────────────────────────── */}
+            {toastMsg && (
+                <Animated.View
+                    style={[styles.toast, { opacity: toastOpacity }]}
+                    pointerEvents="none"
+                >
+                    <Text style={styles.toastText}>{toastMsg}</Text>
+                </Animated.View>
+            )}
+
+            {/* ── Bottom bar ─────────────────────────────── */}
+            <View style={[
+                styles.bottomBar,
+                {
+                    paddingBottom: Math.max(insets.bottom, 16),
+                    backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#FFFFFF',
+                    borderTopColor: colorScheme === 'dark' ? '#334155' : '#E2E8F0',
+                },
+            ]}>
+                {/* Counter */}
+                <Text style={[styles.counter, { color: colors.text }]}>
+                    {selectedIds.length}/3 stores selected
+                </Text>
+
+                {/* Chips */}
+                {selectedStores.length > 0 && (
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.chipsRow}
+                        contentContainerStyle={styles.chipsContent}
+                    >
+                        {selectedStores.map(store => (
+                            <View
+                                key={store.id}
+                                style={[
+                                    styles.chip,
+                                    {
+                                        backgroundColor: colors.primary + '15',
+                                        borderColor: colors.primary + '30',
+                                    },
+                                ]}
+                            >
+                                <Text
+                                    style={[styles.chipLabel, { color: colors.primary }]}
+                                    numberOfLines={1}
+                                >
+                                    {store.name}
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => handleRemoveChip(store.id)}
+                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                >
+                                    <Text style={[styles.chipX, { color: colors.primary }]}>
+                                        ✕
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </ScrollView>
+                )}
+
+                {/* Continue button — only when 3 selected */}
+                {selectedIds.length === 3 && (
+                    <TouchableOpacity
+                        style={[styles.continueBtn, { backgroundColor: colors.primary }]}
+                        onPress={handleContinue}
+                        disabled={isSaving}
+                        activeOpacity={0.8}
+                    >
+                        {isSaving ? (
+                            <ActivityIndicator color="white" />
+                        ) : (
+                            <Text style={styles.continueTxt}>Continue</Text>
+                        )}
+                    </TouchableOpacity>
+                )}
+            </View>
+        </View>
     );
 };
+
+// ─── Styles ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    content: {
-        flex: 1,
-        paddingHorizontal: 20,
+    map: {
+        ...StyleSheet.absoluteFillObject,
     },
+
+    // Loading
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
@@ -289,150 +310,145 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
     },
-    header: {
+
+    // Floating header
+    floatingHeader: {
+        position: 'absolute',
+        left: 20,
+        right: 20,
         alignItems: 'center',
-        paddingTop: 24,
-        paddingBottom: 16,
     },
-    title: {
-        fontSize: 28,
+    headerCard: {
+        paddingHorizontal: 24,
+        paddingVertical: 14,
+        borderRadius: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    headerTitle: {
+        fontSize: 20,
         fontWeight: '800',
         letterSpacing: 0.5,
-        marginBottom: 8,
     },
-    subtitle: {
-        fontSize: 15,
+    headerSubtitle: {
+        fontSize: 13,
         fontWeight: '500',
         opacity: 0.7,
-        textAlign: 'center',
-        marginBottom: 12,
+        marginTop: 3,
     },
-    counterBadge: {
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 20,
+
+    // Callout
+    callout: {
+        padding: 8,
+        minWidth: 140,
+        alignItems: 'center',
     },
-    counterText: {
+    calloutTitle: {
         fontSize: 14,
         fontWeight: '700',
+        color: '#11181C',
+        textAlign: 'center',
     },
-    selectedStoresContainer: {
-        flexDirection: 'row',
-        gap: 10,
-        marginBottom: 20,
+    calloutSub: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#64748B',
+        marginTop: 2,
+        textAlign: 'center',
     },
-    selectedSlot: {
-        flex: 1,
-        height: 80,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderStyle: 'dashed',
-        justifyContent: 'center',
-        alignItems: 'center',
-        position: 'relative',
-        paddingHorizontal: 4,
+    calloutStatus: {
+        fontSize: 11,
+        fontWeight: '600',
+        marginTop: 4,
     },
-    priorityBadge: {
+
+    // Toast
+    toast: {
         position: 'absolute',
-        top: 4,
-        left: 6,
-        fontSize: 11,
-        fontWeight: '800',
-    },
-    selectedSlotContent: {
+        top: '45%',
+        left: 40,
+        right: 40,
+        backgroundColor: 'rgba(0, 0, 0, 0.82)',
+        paddingHorizontal: 20,
+        paddingVertical: 14,
+        borderRadius: 14,
         alignItems: 'center',
-        gap: 4,
     },
-    selectedSlotIcon: {
-        fontSize: 24,
-    },
-    selectedSlotName: {
-        fontSize: 11,
+    toastText: {
+        color: '#FFFFFF',
+        fontSize: 14,
         fontWeight: '600',
         textAlign: 'center',
     },
-    selectedSlotPlaceholder: {
-        fontSize: 11,
-        fontWeight: '500',
-        opacity: 0.5,
-        textAlign: 'center',
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
-    storeGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-    },
-    storeCard: {
-        width: '47%',
-        paddingVertical: 16,
-        paddingHorizontal: 12,
-        borderRadius: 16,
-        alignItems: 'center',
-        position: 'relative',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        elevation: 3,
-    },
-    checkmarkBadge: {
+
+    // Bottom bar
+    bottomBar: {
         position: 'absolute',
-        top: 8,
-        right: 8,
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        justifyContent: 'center',
-        alignItems: 'center',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingTop: 16,
+        paddingHorizontal: 20,
+        borderTopWidth: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 10,
     },
-    checkmarkText: {
-        color: 'white',
-        fontSize: 12,
-        fontWeight: '800',
-    },
-    storeIconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    storeIcon: {
-        fontSize: 28,
-    },
-    storeName: {
-        fontSize: 13,
+    counter: {
+        fontSize: 15,
         fontWeight: '700',
         textAlign: 'center',
-        marginBottom: 2,
+        marginBottom: 12,
     },
-    storeDetails: {
-        fontSize: 11,
-        fontWeight: '500',
-        opacity: 0.6,
-        textAlign: 'center',
+
+    // Chips
+    chipsRow: {
+        marginBottom: 14,
     },
-    confirmButton: {
-        height: 56,
-        borderRadius: 16,
+    chipsContent: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    chip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        gap: 8,
+    },
+    chipLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        maxWidth: 150,
+    },
+    chipX: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+
+    // Continue button
+    continueBtn: {
+        height: 52,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 12,
-        marginBottom: 16,
+        marginBottom: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 8,
         elevation: 4,
     },
-    confirmButtonText: {
+    continueTxt: {
+        color: '#FFFFFF',
         fontSize: 17,
         fontWeight: '800',
         letterSpacing: 0.5,

@@ -45,6 +45,8 @@ interface SavingsComparison {
   userTotal: number;
   itemCount: number;
   comparisons: StoreComparison[];
+  savedCount?: number;
+  updatedCount?: number;
 }
 
 const ScannerScreen = () => {
@@ -478,11 +480,19 @@ const ScannerScreen = () => {
   const buildSavingsComparison = async (
     savedItems: ReviewedReceiptItem[],
     shoppedStore: string
-  ): Promise<SavingsComparison | null> => {
+  ): Promise<SavingsComparison> => {
+    const userTotal = savedItems.reduce((sum, item) => sum + item.price, 0);
+    const baseSavings: SavingsComparison = {
+      userStore: shoppedStore,
+      userTotal,
+      itemCount: savedItems.length,
+      comparisons: [],
+    };
+
     try {
       // Get the other preferred stores (excluding where the user shopped)
       const otherStores = preferredStoreNames.filter(s => s !== shoppedStore);
-      if (otherStores.length === 0) return null;
+      if (otherStores.length === 0) return baseSavings;
 
       // Fetch products from each other store for comparison
       const storeComparisons: StoreComparison[] = [];
@@ -522,19 +532,13 @@ const ScannerScreen = () => {
         }
       }
 
-      if (storeComparisons.length === 0) return null;
-
-      const userTotal = savedItems.reduce((sum, item) => sum + item.price, 0);
-
       return {
-        userStore: shoppedStore,
-        userTotal,
-        itemCount: savedItems.length,
+        ...baseSavings,
         comparisons: storeComparisons,
       };
     } catch (error) {
       console.error('Error building savings comparison:', error);
-      return null;
+      return baseSavings;
     }
   };
 
@@ -669,7 +673,7 @@ const ScannerScreen = () => {
           price: item.price,
           quantity: item.quantity,
           size: item.size,
-          included: !duplicate, // Auto-exclude duplicates
+          included: true, // Include all items — duplicates will update existing prices
           categories: [matchedCat?.name || 'miscellaneous'],
           store: storeMatch.matched ? storeMatch.storeName : '',
           isDuplicate: !!duplicate,
@@ -713,7 +717,7 @@ const ScannerScreen = () => {
       return;
     }
 
-    const includedItems = reviewItems.filter(i => i.included && !i.isDuplicate);
+    const includedItems = reviewItems.filter(i => i.included);
 
     if (includedItems.length === 0) {
       Alert.alert('Error', 'No items selected to save. Please include at least one item.');
@@ -738,34 +742,21 @@ const ScannerScreen = () => {
     try {
       const result = await KipriBackendService.batchSaveReceiptProducts(itemsToSave);
 
-      if (result.saved > 0) {
+      const totalSuccess = result.saved + result.updated;
+      if (totalSuccess > 0) {
         await cacheService.invalidateProducts();
 
         // Build savings comparison before resetting items
         setScanProgress('Comparing prices across stores...');
         const savings = await buildSavingsComparison(itemsToSave, receiptStore);
 
-        if (savings && savings.comparisons.length > 0) {
-          // Show savings modal instead of simple alert
-          setSavingsData(savings);
-          setShowSavingsModal(true);
-        } else {
-          // No comparison data available - show simple success
-          Alert.alert(
-            'Success',
-            `${result.saved} product(s) saved to Kipri!${result.failed > 0 ? ` (${result.failed} failed)` : ''}`,
-            [{
-              text: 'OK',
-              onPress: () => {
-                setReviewItems([]);
-                setReceiptPhotoUris([]);
-                setReceiptStore('');
-                setShowReceiptReview(false);
-                setShowModeSelection(true);
-              }
-            }]
-          );
-        }
+        // Attach save/update counts to savings data for the modal
+        savings.savedCount = result.saved;
+        savings.updatedCount = result.updated;
+
+        // Always show the summary modal
+        setSavingsData(savings);
+        setShowSavingsModal(true);
       } else {
         Alert.alert('Error', `Failed to save products. ${result.errors.join(', ')}`);
       }
@@ -994,15 +985,60 @@ const ScannerScreen = () => {
   const renderSavingsModal = () => {
     if (!savingsData) return null;
 
-    const bestOtherStore = savingsData.comparisons.reduce((best, c) =>
-      c.total < best.total ? c : best, savingsData.comparisons[0]
-    );
+    const hasComparisons = savingsData.comparisons.length > 0;
+    const newCount = savingsData.savedCount || 0;
+    const updatedCount = savingsData.updatedCount || 0;
 
-    const userDidBest = savingsData.userTotal <= bestOtherStore.total;
-    const savingsAmount = Math.abs(savingsData.userTotal - bestOtherStore.total);
-    const savingsPercent = bestOtherStore.total > 0
-      ? Math.round((savingsAmount / bestOtherStore.total) * 100)
-      : 0;
+    // Find cheapest other store
+    const cheapestOther = hasComparisons
+      ? savingsData.comparisons.reduce((best, c) => c.total < best.total ? c : best, savingsData.comparisons[0])
+      : null;
+
+    // Find most expensive other store
+    const mostExpensiveOther = hasComparisons
+      ? savingsData.comparisons.reduce((worst, c) => c.total > worst.total ? c : worst, savingsData.comparisons[0])
+      : null;
+
+    // Calculate savings score (0-100)
+    // 100 = you got the absolute best deal, 0 = you overpaid the most
+    let savingsScore = 50; // default when no comparisons
+    let userDidBest = true;
+    let savingsAmount = 0;
+
+    if (hasComparisons && cheapestOther && mostExpensiveOther) {
+      const allTotals = [savingsData.userTotal, ...savingsData.comparisons.map(c => c.total)];
+      const minTotal = Math.min(...allTotals);
+      const maxTotal = Math.max(...allTotals);
+      const range = maxTotal - minTotal;
+
+      if (range > 0) {
+        // Score: 100 if user got cheapest, 0 if most expensive
+        savingsScore = Math.round(((maxTotal - savingsData.userTotal) / range) * 100);
+      } else {
+        savingsScore = 100; // all prices are the same
+      }
+
+      userDidBest = savingsData.userTotal <= cheapestOther.total;
+      savingsAmount = Math.abs(savingsData.userTotal - cheapestOther.total);
+    }
+
+    // Score label and color
+    const getScoreLabel = (score: number) => {
+      if (score >= 90) return 'Excellent';
+      if (score >= 70) return 'Great';
+      if (score >= 50) return 'Good';
+      if (score >= 30) return 'Fair';
+      return 'Needs Improvement';
+    };
+
+    const getScoreColor = (score: number) => {
+      if (score >= 70) return '#10b981';
+      if (score >= 40) return '#f59e0b';
+      return '#ef4444';
+    };
+
+    const scoreColor = getScoreColor(savingsScore);
+    const headerColor = !hasComparisons ? '#10b981' : scoreColor;
 
     return (
       <Modal
@@ -1014,30 +1050,85 @@ const ScannerScreen = () => {
         <View style={savingsStyles.overlay}>
           <View style={[savingsStyles.container, { backgroundColor: colorScheme === 'dark' ? '#1E293B' : '#FFFFFF' }]}>
             {/* Header */}
-            <View style={[savingsStyles.header, { backgroundColor: userDidBest ? '#10b981' : '#f59e0b' }]}>
-              <Text style={savingsStyles.headerEmoji}>{userDidBest ? '🎉' : '💡'}</Text>
-              <Text style={savingsStyles.headerTitle}>
-                {userDidBest ? 'Great Choice!' : 'You Could Save More'}
-              </Text>
-              <Text style={savingsStyles.headerSubtitle}>
-                {userDidBest
-                  ? `You saved Rs ${savingsAmount.toFixed(2)} shopping at ${savingsData.userStore}!`
-                  : `You could save Rs ${savingsAmount.toFixed(2)} at ${bestOtherStore.storeName}`
-                }
-              </Text>
+            <View style={[savingsStyles.header, { backgroundColor: headerColor }]}>
+              {hasComparisons ? (
+                <>
+                  <Text style={savingsStyles.headerEmoji}>
+                    {savingsScore >= 70 ? '🎉' : (savingsScore >= 40 ? '👍' : '💡')}
+                  </Text>
+                  <Text style={savingsStyles.headerTitle}>
+                    {getScoreLabel(savingsScore)}!
+                  </Text>
+                  <Text style={savingsStyles.headerSubtitle}>
+                    {userDidBest
+                      ? `You picked the best store and saved Rs ${savingsAmount.toFixed(2)}!`
+                      : `You could have saved Rs ${savingsAmount.toFixed(2)} at ${cheapestOther!.storeName}`
+                    }
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={savingsStyles.headerEmoji}>✅</Text>
+                  <Text style={savingsStyles.headerTitle}>Products Saved!</Text>
+                  <Text style={savingsStyles.headerSubtitle}>
+                    {savingsData.itemCount} item{savingsData.itemCount !== 1 ? 's' : ''} processed at {savingsData.userStore}
+                  </Text>
+                </>
+              )}
             </View>
 
             <ScrollView style={savingsStyles.body} showsVerticalScrollIndicator={false}>
-              {/* User's store card */}
+              {/* Save/Update summary */}
+              <View style={[savingsStyles.actionSummary, {
+                backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#F8FAFC',
+                borderColor: colors.border,
+              }]}>
+                {newCount > 0 && (
+                  <View style={savingsStyles.actionRow}>
+                    <Text style={savingsStyles.actionIcon}>🆕</Text>
+                    <Text style={[savingsStyles.actionText, { color: colors.text }]}>
+                      {newCount} new product{newCount !== 1 ? 's' : ''} added
+                    </Text>
+                  </View>
+                )}
+                {updatedCount > 0 && (
+                  <View style={savingsStyles.actionRow}>
+                    <Text style={savingsStyles.actionIcon}>🔄</Text>
+                    <Text style={[savingsStyles.actionText, { color: colors.text }]}>
+                      {updatedCount} price{updatedCount !== 1 ? 's' : ''} updated
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Savings Score — only when comparisons exist */}
+              {hasComparisons && (
+                <View style={[savingsStyles.scoreContainer, {
+                  backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#FFFFFF',
+                  borderColor: scoreColor,
+                }]}>
+                  <Text style={[savingsStyles.scoreLabel, { color: colors.text + '80' }]}>SAVINGS SCORE</Text>
+                  <Text style={[savingsStyles.scoreNumber, { color: scoreColor }]}>{savingsScore}</Text>
+                  <Text style={[savingsStyles.scoreOutOf, { color: colors.text + '60' }]}>/100</Text>
+                  <View style={savingsStyles.scoreBarBackground}>
+                    <View style={[savingsStyles.scoreBarFill, {
+                      width: `${savingsScore}%`,
+                      backgroundColor: scoreColor,
+                    }]} />
+                  </View>
+                </View>
+              )}
+
+              {/* Your store card */}
               <View style={[savingsStyles.storeCard, savingsStyles.userStoreCard, {
-                borderColor: userDidBest ? '#10b981' : colors.border,
+                borderColor: headerColor,
                 backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#F0FDF4',
               }]}>
                 <View style={savingsStyles.storeCardHeader}>
                   <Text style={[savingsStyles.storeName, { color: colors.text }]}>
                     {savingsData.userStore}
                   </Text>
-                  <View style={[savingsStyles.youBadge, { backgroundColor: userDidBest ? '#10b981' : '#f59e0b' }]}>
+                  <View style={[savingsStyles.youBadge, { backgroundColor: headerColor }]}>
                     <Text style={savingsStyles.youBadgeText}>You shopped here</Text>
                   </View>
                 </View>
@@ -1050,76 +1141,93 @@ const ScannerScreen = () => {
               </View>
 
               {/* Comparison stores */}
-              <Text style={[savingsStyles.comparisonTitle, { color: colors.text + '99' }]}>
-                SAME ITEMS AT OTHER STORES
-              </Text>
+              {hasComparisons && (
+                <>
+                  <Text style={[savingsStyles.comparisonTitle, { color: colors.text + '99' }]}>
+                    SAME ITEMS AT OTHER STORES
+                  </Text>
 
-              {savingsData.comparisons
-                .sort((a, b) => a.total - b.total)
-                .map((comp, idx) => {
-                  const diff = savingsData.userTotal - comp.total;
-                  const isMoreExpensive = diff < 0;
-                  const isCheaper = diff > 0;
+                  {savingsData.comparisons
+                    .sort((a, b) => a.total - b.total)
+                    .map((comp) => {
+                      const diff = savingsData.userTotal - comp.total;
+                      const isMoreExpensive = diff < 0;
+                      const isCheaper = diff > 0;
 
-                  return (
-                    <View
-                      key={comp.storeName}
-                      style={[savingsStyles.storeCard, {
-                        borderColor: isCheaper ? '#10b981' : (isMoreExpensive ? '#ef4444' : colors.border),
-                        backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#FFFFFF',
-                      }]}
-                    >
-                      <View style={savingsStyles.storeCardHeader}>
-                        <Text style={[savingsStyles.storeName, { color: colors.text }]}>
-                          {comp.storeName}
-                        </Text>
-                        {isCheaper && (
-                          <View style={[savingsStyles.diffBadge, { backgroundColor: '#DCFCE7' }]}>
-                            <Text style={[savingsStyles.diffBadgeText, { color: '#166534' }]}>
-                              Rs {Math.abs(diff).toFixed(2)} cheaper
+                      return (
+                        <View
+                          key={comp.storeName}
+                          style={[savingsStyles.storeCard, {
+                            borderColor: isCheaper ? '#10b981' : (isMoreExpensive ? '#ef4444' : colors.border),
+                            backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#FFFFFF',
+                          }]}
+                        >
+                          <View style={savingsStyles.storeCardHeader}>
+                            <Text style={[savingsStyles.storeName, { color: colors.text }]}>
+                              {comp.storeName}
                             </Text>
+                            {isCheaper && (
+                              <View style={[savingsStyles.diffBadge, { backgroundColor: '#DCFCE7' }]}>
+                                <Text style={[savingsStyles.diffBadgeText, { color: '#166534' }]}>
+                                  Rs {Math.abs(diff).toFixed(2)} cheaper
+                                </Text>
+                              </View>
+                            )}
+                            {isMoreExpensive && (
+                              <View style={[savingsStyles.diffBadge, { backgroundColor: '#FEE2E2' }]}>
+                                <Text style={[savingsStyles.diffBadgeText, { color: '#991B1B' }]}>
+                                  Rs {Math.abs(diff).toFixed(2)} more
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                        )}
-                        {isMoreExpensive && (
-                          <View style={[savingsStyles.diffBadge, { backgroundColor: '#FEE2E2' }]}>
-                            <Text style={[savingsStyles.diffBadgeText, { color: '#991B1B' }]}>
-                              Rs {Math.abs(diff).toFixed(2)} more
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[savingsStyles.storeTotal, { color: colors.text }]}>
-                        Rs {comp.total.toFixed(2)}
-                      </Text>
-                      <Text style={[savingsStyles.storeItemCount, { color: colors.text + '80' }]}>
-                        {comp.matchedItems} of {savingsData.itemCount} items matched
-                      </Text>
-                    </View>
-                  );
-                })}
+                          <Text style={[savingsStyles.storeTotal, { color: colors.text }]}>
+                            Rs {comp.total.toFixed(2)}
+                          </Text>
+                          <Text style={[savingsStyles.storeItemCount, { color: colors.text + '80' }]}>
+                            {comp.matchedItems} of {savingsData.itemCount} items matched
+                          </Text>
+                        </View>
+                      );
+                    })}
 
-              {/* Verdict */}
-              <View style={[savingsStyles.verdictCard, {
-                backgroundColor: userDidBest
-                  ? (colorScheme === 'dark' ? '#064E3B' : '#ECFDF5')
-                  : (colorScheme === 'dark' ? '#78350F' : '#FFFBEB'),
-              }]}>
-                <Text style={[savingsStyles.verdictText, {
-                  color: userDidBest
-                    ? (colorScheme === 'dark' ? '#A7F3D0' : '#065F46')
-                    : (colorScheme === 'dark' ? '#FDE68A' : '#92400E'),
+                  {/* Verdict */}
+                  <View style={[savingsStyles.verdictCard, {
+                    backgroundColor: savingsScore >= 50
+                      ? (colorScheme === 'dark' ? '#064E3B' : '#ECFDF5')
+                      : (colorScheme === 'dark' ? '#78350F' : '#FFFBEB'),
+                  }]}>
+                    <Text style={[savingsStyles.verdictText, {
+                      color: savingsScore >= 50
+                        ? (colorScheme === 'dark' ? '#A7F3D0' : '#065F46')
+                        : (colorScheme === 'dark' ? '#FDE68A' : '#92400E'),
+                    }]}>
+                      {userDidBest
+                        ? `${savingsData.userStore} was the cheapest option for your basket. Keep shopping here to save!`
+                        : `Next time, try ${cheapestOther!.storeName} for these items — you'd save Rs ${savingsAmount.toFixed(2)} (${cheapestOther!.matchedItems} items compared).`
+                      }
+                    </Text>
+                  </View>
+                </>
+              )}
+
+              {/* No comparisons tip */}
+              {!hasComparisons && (
+                <View style={[savingsStyles.verdictCard, {
+                  backgroundColor: colorScheme === 'dark' ? '#1E3A5F' : '#EFF6FF',
                 }]}>
-                  {userDidBest
-                    ? `Shopping at ${savingsData.userStore} was the best choice! You saved ${savingsPercent}% compared to ${bestOtherStore.storeName}.`
-                    : `Next time, consider shopping at ${bestOtherStore.storeName} for these items. You could save about ${savingsPercent}% (Rs ${savingsAmount.toFixed(2)}).`
-                  }
-                </Text>
-              </View>
+                  <Text style={[savingsStyles.verdictText, {
+                    color: colorScheme === 'dark' ? '#93C5FD' : '#1E40AF',
+                  }]}>
+                    Scan receipts from your other stores too — Kipri will compare prices and score your savings!
+                  </Text>
+                </View>
+              )}
             </ScrollView>
 
             {/* Dismiss button */}
             <TouchableOpacity
-              style={[savingsStyles.dismissButton, { backgroundColor: userDidBest ? '#10b981' : '#f59e0b' }]}
+              style={[savingsStyles.dismissButton, { backgroundColor: headerColor }]}
               onPress={dismissSavingsModal}
             >
               <Text style={savingsStyles.dismissButtonText}>GOT IT</Text>
@@ -1374,10 +1482,10 @@ const ScannerScreen = () => {
                   </View>
                 </View>
 
-                {/* Duplicate Warning */}
+                {/* Duplicate — will update existing price */}
                 {item.isDuplicate && (
-                  <View style={styles.duplicateBadge}>
-                    <Text style={styles.duplicateBadgeText}>Already exists in store</Text>
+                  <View style={[styles.duplicateBadge, { backgroundColor: '#DBEAFE' }]}>
+                    <Text style={[styles.duplicateBadgeText, { color: '#1E40AF' }]}>Will update price</Text>
                   </View>
                 )}
 
@@ -2548,6 +2656,59 @@ const savingsStyles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     letterSpacing: 1,
+  },
+  actionSummary: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  actionIcon: {
+    fontSize: 18,
+  },
+  actionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  scoreContainer: {
+    borderRadius: 16,
+    borderWidth: 2,
+    padding: 20,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  scoreLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  scoreNumber: {
+    fontSize: 56,
+    fontWeight: '900',
+    lineHeight: 62,
+  },
+  scoreOutOf: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  scoreBarBackground: {
+    width: '100%',
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    overflow: 'hidden',
+  },
+  scoreBarFill: {
+    height: '100%',
+    borderRadius: 4,
   },
 });
 

@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
@@ -10,10 +11,13 @@ import 'react-native-reanimated';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import AuthScreen from '../components/AuthScreen';
+import CategoryPickerScreen from '../components/CategoryPickerScreen';
 import StoreSelectionScreen from '../components/StoreSelectionScreen';
 import { AppDataProvider } from '../contexts/AppDataContext';
+import { InitialCategoryProvider, useInitialCategory } from '../contexts/InitialCategoryContext';
 import { SavedItemsProvider } from '../contexts/SavedItemsContext';
 import { StorePreferencesProvider, useStorePreferences } from '../contexts/StorePreferencesContext';
+import { LogoutProvider } from '../contexts/LogoutContext';
 import AuthService from '../services/AuthService';
 import DataCacheService from '../services/DataCacheService';
 import ShoppingListService from '../services/ShoppingListService';
@@ -224,20 +228,30 @@ function AppContent({
   handleAuthSuccess: () => Promise<void>;
 }) {
   const { hasSelectedStores, selectedStores, isLoading: storesLoading } = useStorePreferences();
+  const { setInitialCategory } = useInitialCategory();
   const [storeSelectionKey, setStoreSelectionKey] = useState(0);
   const [dataLoadingMessage, setDataLoadingMessage] = useState('Loading your savings...');
   const [isDataReady, setIsDataReady] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
   // Get selected store names for filtering
   const selectedStoreNames = useMemo(() => {
     return selectedStores?.map(store => store.name) || null;
   }, [selectedStores]);
 
-  // Force re-render when store selection is complete
+  // Force re-render when store selection is complete — show category picker
   const handleStoreSelectionComplete = useCallback(() => {
-    console.log('[AppContent] Store selection completed, refreshing...');
+    console.log('[AppContent] Store selection completed, showing category picker...');
     setStoreSelectionKey(prev => prev + 1);
+    setShowCategoryPicker(true);
   }, []);
+
+  // Handle category selected from picker
+  const handleCategorySelected = useCallback((category: string) => {
+    console.log('[AppContent] Category selected:', category);
+    setInitialCategory(category);
+    setShowCategoryPicker(false);
+  }, [setInitialCategory]);
 
   // Loading state - checking authentication or stores
   if (isAuthenticated === null || (isAuthenticated && storesLoading)) {
@@ -254,6 +268,11 @@ function AppContent({
   // Authenticated but no stores selected - show store selection screen
   if (!hasSelectedStores) {
     return <StoreSelectionScreen onComplete={handleStoreSelectionComplete} />;
+  }
+
+  // Show category picker after store selection (onboarding only)
+  if (showCategoryPicker) {
+    return <CategoryPickerScreen onCategorySelected={handleCategorySelected} />;
   }
 
   // Authenticated and has stores - show main app with filtered data
@@ -282,6 +301,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [appIsReady, setAppIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [sessionKey, setSessionKey] = useState(0);
   const startTimeRef = useRef<number>(Date.now());
   const [loaded] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
@@ -313,6 +333,39 @@ export default function RootLayout() {
       checkAuth();
     }
   }, [appIsReady]);
+
+  // Explicit logout handler — called from Settings via LogoutContext
+  // Nukes all local state so it feels like a fresh install, then signs out
+  const handleLogout = useCallback(async () => {
+    console.log('[RootLayout] Logout requested — resetting all local data...');
+
+    // 1. Clear in-memory service caches
+    await DataCacheService.getInstance().invalidateCache();
+
+    // 2. Clear shopping list (in-memory + AsyncStorage)
+    const shoppingService = ShoppingListService.getInstance();
+    shoppingService['items'] = [];
+    shoppingService['isLoaded'] = false;
+    await AsyncStorage.removeItem('@kipri_shopping_list');
+
+    // 3. Clear all other AsyncStorage keys
+    await AsyncStorage.multiRemove([
+      '@kipri_user_language',
+      'selected_store',
+      'is_on_main_menu',
+    ]);
+
+    // 4. Sign out from Supabase
+    await AuthService.signOut();
+
+    console.log('[RootLayout] All local data cleared, signed out');
+
+    // 5. Bump session key — forces full remount of all providers/contexts
+    setSessionKey(prev => prev + 1);
+
+    // 6. Flip auth state — shows login screen
+    setIsAuthenticated(false);
+  }, []);
 
   // Handle successful authentication
   const handleAuthSuccess = useCallback(async () => {
@@ -373,17 +426,21 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <SavedItemsProvider>
-        <StorePreferencesProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
-            <AppContent
-              colorScheme={colorScheme}
-              isAuthenticated={isAuthenticated}
-              handleAuthSuccess={handleAuthSuccess}
-            />
-          </ThemeProvider>
-        </StorePreferencesProvider>
-      </SavedItemsProvider>
+      <LogoutProvider value={{ logout: handleLogout }}>
+        <InitialCategoryProvider key={`session-${sessionKey}`}>
+          <SavedItemsProvider>
+            <StorePreferencesProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
+                <AppContent
+                  colorScheme={colorScheme}
+                  isAuthenticated={isAuthenticated}
+                  handleAuthSuccess={handleAuthSuccess}
+                />
+              </ThemeProvider>
+            </StorePreferencesProvider>
+          </SavedItemsProvider>
+        </InitialCategoryProvider>
+      </LogoutProvider>
     </View>
   );
 }

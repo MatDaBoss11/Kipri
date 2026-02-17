@@ -1,0 +1,100 @@
+================================================================================
+TESTING GUIDE - Store Filtering Optimization
+================================================================================
+
+HOW TO TEST THE OPTIMIZATION:
+------------------------------
+
+1. PREPARE FOR TESTING:
+   - Make sure you have the latest code
+   - Clear any existing app cache
+   - Have login credentials ready
+
+2. TEST NEW USER FLOW:
+   Step 1: Open the app
+   Step 2: You should see the login screen
+   Step 3: Login with your credentials
+   Step 4: Store selection screen should appear
+   Step 5: Select exactly 3 stores
+   Step 6: Click "Continue"
+   Step 7: Loading screen appears with messages:
+           - "Fetching products..."
+           - "Processing products..."
+           - "Loading images..."
+           - "Caching images..."
+   
+   VERIFY:
+   ✓ Check console logs for:
+     "[AppDataContext] Loading data for 3 selected stores: [...]"
+     "✅ Preloaded XX products and XX promotions from 3 stores"
+   ✓ App should load faster than before
+   ✓ Only products from your 3 stores should be visible
+   ✓ Number of combined products should be ~40-50 instead of 90+
+
+3. TEST RETURNING USER FLOW:
+   Step 1: Close and reopen the app
+   Step 2: You should NOT see login or store selection
+   Step 3: App loads directly to main screen
+   Step 4: Loading screen shows while data preloads
+   
+   VERIFY:
+   ✓ Check console logs show same store names as before
+   ✓ Only products from previously selected stores appear
+   ✓ Fast loading time maintained
+
+4. VERIFY DATA FILTERING:
+   - Go to the products tab
+   - Check each product card
+   - Verify the store name matches one of your 3 selected stores
+   - No products from other stores should appear
+
+5. VERIFY PROMOTIONS FILTERING:
+   - Go to the promotions tab
+   - Check each promotion
+   - Verify promotions are only from your 3 selected stores
+
+6. CHECK CONSOLE LOGS:
+   You should see logs like:
+   
+   🏪 [StorePreferencesContext] User stores loaded successfully: 3 stores
+   🚀 Preloading data for stores: ["Winners Pereybere", "Super U Grand Baie", "Spar Trou aux Biches"]
+   ✅ Preloaded 45 products and 12 promotions from 3 stores
+   [AppDataContext] Loading data for 3 selected stores: [...]
+   [AppDataContext] Fetched 45 products, 12 promotions
+   [AppDataContext] Created 45 combined products
+   [AppDataContext] Preloaded 45 image URLs
+   [AppDataContext] Image prefetch progress: 45/45
+   [AppDataContext] Image prefetch complete!
+   [AppDataContext] Data preload complete!
+
+7. PERFORMANCE COMPARISON:
+   Before: ~91 combined products from 6 stores
+   After:  ~45 combined products from 3 stores
+   
+   Startup time should be noticeably faster!
+
+TROUBLESHOOTING:
+----------------
+
+Problem: No products showing
+Solution: Check console logs for store names, verify database has products for those stores
+
+Problem: Products from wrong stores appearing
+Solution: Clear cache (clearKipriCache() in console), reload app
+
+Problem: Loading is still slow
+Solution: Check network connection, verify only 3 stores being loaded in logs
+
+Problem: App crashes on startup
+Solution: Check for TypeScript errors, ensure all dependencies installed
+
+COMMAND TO RUN:
+---------------
+npm start
+
+Or if port 8081 is busy:
+npm start -- --port 8084
+
+Then press 'a' for Android or 'i' for iOS
+
+================================================================================

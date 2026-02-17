@@ -274,40 +274,64 @@ class KipriBackendService {
   /**
    * Batch save receipt products to Supabase
    */
-  async batchSaveReceiptProducts(items: ReviewedReceiptItem[]): Promise<{ saved: number; failed: number; errors: string[] }> {
-    const result = { saved: 0, failed: 0, errors: [] as string[] };
+  async batchSaveReceiptProducts(items: ReviewedReceiptItem[]): Promise<{ saved: number; updated: number; failed: number; errors: string[] }> {
+    const result = { saved: 0, updated: 0, failed: 0, errors: [] as string[] };
 
-    // Filter to only included, non-duplicate items
-    const itemsToSave = items.filter(item => item.included && !item.isDuplicate);
+    const includedItems = items.filter(item => item.included);
 
-    if (itemsToSave.length === 0) {
+    if (includedItems.length === 0) {
       result.errors.push('No items to save');
       return result;
     }
 
-    // Convert to Product[] format for SupabaseService.saveProducts
-    const products: Product[] = itemsToSave.map(item => ({
-      product: item.product_name,
-      brand: item.brand?.toUpperCase() || '',
-      price: item.price.toString(),
-      size: item.size || '',
-      store: item.store,
-      categories: item.categories.length > 0 ? item.categories : ['miscellaneous'],
-    }));
+    // Split into new items and existing items that need price updates
+    const newItems = includedItems.filter(item => !item.isDuplicate);
+    const updateItems = includedItems.filter(item => item.isDuplicate && item.existingProductId);
 
-    try {
-      const savedProducts = await SupabaseService.saveProducts(products);
+    // Batch INSERT new products
+    if (newItems.length > 0) {
+      const products: Product[] = newItems.map(item => ({
+        product: item.product_name,
+        brand: item.brand?.toUpperCase() || '',
+        price: item.price.toString(),
+        size: item.size || '',
+        store: item.store,
+        categories: item.categories.length > 0 ? item.categories : ['miscellaneous'],
+      }));
 
-      if (savedProducts) {
-        result.saved = savedProducts.length;
-        result.failed = itemsToSave.length - savedProducts.length;
-      } else {
-        result.failed = itemsToSave.length;
-        result.errors.push('Batch save returned null');
+      try {
+        const savedProducts = await SupabaseService.saveProducts(products);
+        if (savedProducts) {
+          result.saved = savedProducts.length;
+        } else {
+          result.failed += newItems.length;
+          result.errors.push('Batch save returned null');
+        }
+      } catch (error) {
+        result.failed += newItems.length;
+        result.errors.push(error instanceof Error ? error.message : 'Error saving new products');
       }
-    } catch (error) {
-      result.failed = itemsToSave.length;
-      result.errors.push(error instanceof Error ? error.message : 'Unknown error during batch save');
+    }
+
+    // UPDATE existing products with new prices
+    for (const item of updateItems) {
+      try {
+        const updated = await SupabaseService.updateProduct(item.existingProductId!, {
+          price: item.price.toString(),
+          brand: item.brand?.toUpperCase() || '',
+          size: item.size || '',
+          categories: item.categories.length > 0 ? item.categories : ['miscellaneous'],
+        });
+        if (updated) {
+          result.updated++;
+        } else {
+          result.failed++;
+          result.errors.push(`Failed to update ${item.product_name}`);
+        }
+      } catch (error) {
+        result.failed++;
+        result.errors.push(`Error updating ${item.product_name}`);
+      }
     }
 
     return result;

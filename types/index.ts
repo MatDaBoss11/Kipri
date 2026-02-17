@@ -87,6 +87,8 @@ export interface Store {
   color: string;                 // Hex color like "#4CAF50"
   is_active: boolean;
   created_at: string;
+  latitude: number | null;       // GPS latitude (WGS 84)
+  longitude: number | null;      // GPS longitude (WGS 84)
 }
 
 export interface UserStorePreference {

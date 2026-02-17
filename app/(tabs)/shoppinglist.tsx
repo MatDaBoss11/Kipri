@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSavedItems } from '../../contexts/SavedItemsContext';
+import { useStorePreferences } from '../../contexts/StorePreferencesContext';
 import SavedItemCard from '../../components/SavedItemCard';
 import ShoppingListFilters, { PriceRange } from '../../components/ShoppingListFilters';
 import { SavedItem } from '../../types';
@@ -25,18 +26,23 @@ const ShoppingListScreen = () => {
   const colors = Colors[colorScheme ?? 'light'];
 
   const { savedItems, isLoading, clearAll } = useSavedItems();
+  const { selectedStores: userStores } = useStorePreferences();
 
   // Filter states
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<PriceRange>(null);
 
-  // Normalize store name for comparison
+  // Normalize store name for comparison against user's selected stores
   const normalizeStoreName = (storeName: string): string => {
+    if (!userStores || userStores.length === 0) return storeName;
     const lower = storeName.toLowerCase().trim();
-    if (lower.includes('winner')) return 'Winners';
-    if (lower.includes('king') || lower.includes('saver')) return 'Kingsavers';
-    if (lower.includes('super') || lower.includes('u')) return 'Super U';
+    for (const store of userStores) {
+      const fullName = store.name.toLowerCase();
+      if (lower === fullName || lower.includes(fullName) || fullName.includes(lower)) {
+        return store.name;
+      }
+    }
     return storeName;
   };
 
@@ -202,6 +208,7 @@ const ShoppingListScreen = () => {
         setPriceRange={setPriceRange}
         colors={colors}
         colorScheme={colorScheme}
+        userStores={userStores || []}
       />
 
       {/* Content */}

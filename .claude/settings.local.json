@@ -11,7 +11,15 @@
       "Bash(git rm:*)",
       "Bash(npx eas build:*)",
       "Bash(npx expo prebuild:*)",
-      "Bash(npx expo:*)"
+      "Bash(npx expo:*)",
+      "Bash(timeout 5 tail:*)",
+      "Bash(ping:*)",
+      "Bash(where:*)",
+      "Bash(npx supabase:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: add receipt scanning, store preferences, settings, language support, and post-save price comparison\n\n- Receipt scanning: multi-photo receipt OCR via GPT-4o Vision edge function with cross-photo deduplication, editable review UI, batch save to database\n- Price comparison: after saving receipt products, compare prices across user''s preferred stores and show savings/could-save summary modal\n- Store preferences: user selects 3 preferred stores on first login, used for filtering and receipt store selection\n- Settings tab: new settings screen with account info, store preferences, and sign out\n- Language support: English/French translation system with LanguageContext\n- Auth hardening: proactive stale session clearing, graceful token refresh failure handling\n- UI redesign: center raised + button in tab bar, hero receipt scanner on mode selection page\n- New edge functions: process-receipt, categorize-products, process-image, structure-text\n- New services: StoreMatchingService, StoreService, LanguageService, EdgeFunctionService\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(kill:*)"
     ],
     "deny": [],
     "ask": []

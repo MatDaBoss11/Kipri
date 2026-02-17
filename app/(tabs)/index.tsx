@@ -2,7 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import { CombinedProduct } from '../../services/ProductGroupingService';
 import CombinedProductCard from '../../components/CombinedProductCard';
 import ProductComparisonModal from '../../components/ProductComparisonModal';
 import { useAppData } from '../../contexts/AppDataContext';
+import { useInitialCategory } from '../../contexts/InitialCategoryContext';
 
 const { width } = Dimensions.get('window');
 
@@ -38,8 +39,17 @@ const PricesScreen = () => {
     refresh
   } = useAppData();
 
+  const { initialCategory, clearInitialCategory } = useInitialCategory();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Apply initial category from onboarding picker
+  useEffect(() => {
+    if (initialCategory) {
+      setSelectedCategory(initialCategory);
+      clearInitialCategory();
+    }
+  }, [initialCategory, clearInitialCategory]);
   const [selectedCombinedProduct, setSelectedCombinedProduct] = useState<CombinedProduct | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);

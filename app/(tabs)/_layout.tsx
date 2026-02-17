@@ -17,7 +17,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     { name: 'index', icon: 'shopping-bag', iconOutline: 'shopping-bag' },
     { name: 'promotions', icon: 'local-offer', iconOutline: 'local-offer' },
     { name: 'scanner', icon: 'add', iconOutline: 'add', isCenter: true },
-    { name: 'shoppinglist', icon: 'bookmark', iconOutline: 'bookmark-outline' },
+    { name: 'shoppinglist', icon: 'shopping-cart', iconOutline: 'shopping-cart' },
     { name: 'settings', icon: 'settings', iconOutline: 'settings' },
   ];
 

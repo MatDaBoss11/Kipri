@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLogout } from '../../contexts/LogoutContext';
 import { useStorePreferences } from '../../contexts/StorePreferencesContext';
 import StoreService from '../../services/StoreService';
 import AuthService from '../../services/AuthService';
@@ -25,7 +26,8 @@ const SettingsScreen = () => {
   const colors = Colors[colorScheme ?? 'light'];
   const isDark = colorScheme === 'dark';
 
-  const { selectedStores, saveStorePreferences, loadUserStores } = useStorePreferences();
+  const { logout } = useLogout();
+  const { selectedStores, saveStorePreferences, loadUserStores, clearStorePreferences } = useStorePreferences();
 
   // State for editing stores
   const [isEditingStores, setIsEditingStores] = useState(false);
@@ -70,6 +72,21 @@ const SettingsScreen = () => {
     } finally {
       setIsLoadingStores(false);
     }
+  };
+
+  const handleReselectOnMap = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      'Reselect Stores',
+      'This will take you back to the map to pick your 3 stores. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go to Map',
+          onPress: () => clearStorePreferences(),
+        },
+      ]
+    );
   };
 
   const handleCancelEdit = () => {
@@ -136,7 +153,7 @@ const SettingsScreen = () => {
           onPress: async () => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
             try {
-              await AuthService.signOut();
+              await logout();
             } catch (error) {
               console.error('Error logging out:', error);
               Alert.alert('Error', 'Failed to log out. Please try again.');
@@ -145,7 +162,7 @@ const SettingsScreen = () => {
         },
       ]
     );
-  }, []);
+  }, [logout]);
 
   const getEditSelectedStore = (index: number): Store | null => {
     const storeId = editSelectedIds[index];
@@ -402,14 +419,24 @@ const SettingsScreen = () => {
           <View style={styles.sectionHeader}>
             <MaterialIcons name="store" size={22} color={colors.primary} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>My Stores</Text>
-            <TouchableOpacity
-              style={[styles.changeButton, { backgroundColor: colors.primary }]}
-              onPress={handleEditStores}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="edit" size={14} color="white" />
-              <Text style={styles.changeButtonText}>Change</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                style={[styles.changeButton, { backgroundColor: colors.primary }]}
+                onPress={handleReselectOnMap}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="map" size={14} color="white" />
+                <Text style={styles.changeButtonText}>Map</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.changeButton, { backgroundColor: colors.primary }]}
+                onPress={handleEditStores}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="edit" size={14} color="white" />
+                <Text style={styles.changeButtonText}>Change</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.sectionContent}>
             {selectedStores && selectedStores.length > 0 ? (
