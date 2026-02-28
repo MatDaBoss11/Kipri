@@ -646,7 +646,7 @@ const CameraScannerView: React.FC<CameraScannerViewProps> = ({
           <View style={[styles.overlayFull, styles.centered, { zIndex: 50 }]}>
             <View style={styles.storePickerCard}>
               <Text style={styles.storePickerTitle}>Which store are you in?</Text>
-              <Text style={styles.storePickerSubtitle}>We'll remember for your shopping trip</Text>
+              <Text style={styles.storePickerSubtitle}>We&apos;ll remember for your shopping trip</Text>
 
               <View style={styles.storePickerChips}>
                 {preferredStoreNames.map(name => (

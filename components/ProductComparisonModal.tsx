@@ -24,7 +24,6 @@ import SupabaseService from '../services/SupabaseService';
 import { Product, Promotion } from '../types';
 import { CombinedProduct } from './CombinedProductCard';
 
-const NO_IMAGE_PLACEHOLDER = require('../assets/images/Screenshot 2025-12-11 121944.png');
 
 interface ProductComparisonModalProps {
   visible: boolean;

@@ -1,5 +1,3 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
 
@@ -10,13 +8,14 @@ web-build/
 expo-env.d.ts
 
 # Native
-.kotlin/
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.keystore
+.kotlin/
 
 # Metro
 .metro-health-check*
@@ -31,34 +30,20 @@ yarn-error.*
 *.pem
 
 # local env files
-.env*.local
 .env
+.env*.local
 
 # typescript
 *.tsbuildinfo
 
-app-example
-
-Backend_Integration.md
-OCR_FIX_COMPLETE.md
-QUICK_START.md
-README.md
-reset-project.js
-tsconfig.json
-
-# Quick Start
-QUICK_START.md
-
-# Backend Integration
-BACKEND_INTEGRATION.md
-
-# OCR Fix Complete
-OCR_FIX_COMPLETE.md
-
 # Windows artifacts
 nul
 
-# Sensitive scripts with hardcoded keys - DO NOT COMMIT
+# Expo template files
+app-example
+reset-project.js
+
+# Sensitive scripts - DO NOT COMMIT
 config/supabase.js
 scripts/uploadProducts.js
 
@@ -66,8 +51,12 @@ scripts/uploadProducts.js
 .claude/settings.local.json
 
 # Generated docs/artifacts
-QUICK_REFERENCE.md
+*.md
+!README.md
 docs/
 IMPLEMENTATION_VERIFICATION.txt
 OPTIMIZATION_SUMMARY.txt
 TESTING_GUIDE.txt
+
+# Supabase temp
+supabase/.temp/
