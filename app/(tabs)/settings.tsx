@@ -14,7 +14,9 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useLogout } from '../../contexts/LogoutContext';
+import { useOnboarding } from '../../contexts/OnboardingContext';
 import { useStorePreferences } from '../../contexts/StorePreferencesContext';
 import StoreService from '../../services/StoreService';
 import AuthService from '../../services/AuthService';
@@ -27,6 +29,8 @@ const SettingsScreen = () => {
   const isDark = colorScheme === 'dark';
 
   const { logout } = useLogout();
+  const { resetOnboarding } = useOnboarding();
+  const router = useRouter();
   const { selectedStores, saveStorePreferences, loadUserStores, clearStorePreferences } = useStorePreferences();
 
   // State for editing stores
@@ -217,6 +221,7 @@ const SettingsScreen = () => {
 
     return (
       <TouchableOpacity
+        ph-label="Store Card"
         key={store.id}
         style={[
           styles.storeCard,
@@ -292,7 +297,7 @@ const SettingsScreen = () => {
       >
         {/* Header */}
         <View style={styles.editHeader}>
-          <TouchableOpacity onPress={handleCancelEdit} style={styles.backButton}>
+          <TouchableOpacity ph-label="Cancel Edit Stores" onPress={handleCancelEdit} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <View style={styles.editHeaderText}>
@@ -338,6 +343,7 @@ const SettingsScreen = () => {
             {/* Save Button */}
             <View style={styles.buttonContainer}>
               <TouchableOpacity
+                ph-label="Save Store Changes"
                 style={[
                   styles.saveButton,
                   {
@@ -421,6 +427,7 @@ const SettingsScreen = () => {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>My Stores</Text>
             <View style={{ flexDirection: 'row', gap: 6 }}>
               <TouchableOpacity
+                ph-label="Reselect Stores on Map"
                 style={[styles.changeButton, { backgroundColor: colors.primary }]}
                 onPress={handleReselectOnMap}
                 activeOpacity={0.7}
@@ -429,6 +436,7 @@ const SettingsScreen = () => {
                 <Text style={styles.changeButtonText}>Map</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                ph-label="Change Stores"
                 style={[styles.changeButton, { backgroundColor: colors.primary }]}
                 onPress={handleEditStores}
                 activeOpacity={0.7}
@@ -449,6 +457,7 @@ const SettingsScreen = () => {
                   No stores selected
                 </Text>
                 <TouchableOpacity
+                  ph-label="Select Stores"
                   style={[styles.selectStoresButton, { backgroundColor: colors.primary }]}
                   onPress={handleEditStores}
                   activeOpacity={0.7}
@@ -478,8 +487,38 @@ const SettingsScreen = () => {
           </View>
         </View>
 
+        {/* Help Section */}
+        <View style={[styles.section, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
+          <View style={styles.sectionHeader}>
+            <MaterialIcons name="help-outline" size={22} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Help</Text>
+          </View>
+          <TouchableOpacity
+            ph-label="Replay Onboarding"
+            style={styles.helpRow}
+            activeOpacity={0.7}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              resetOnboarding();
+              router.navigate('/(tabs)');
+            }}
+          >
+            <View style={[styles.helpIconCircle, { backgroundColor: colors.primary + '20' }]}>
+              <MaterialIcons name="play-circle-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.helpTextContainer}>
+              <Text style={[styles.helpTitle, { color: colors.text }]}>How Kipri Works</Text>
+              <Text style={[styles.helpSubtitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Replay the app walkthrough
+              </Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={isDark ? '#94A3B8' : '#64748B'} />
+          </TouchableOpacity>
+        </View>
+
         {/* Logout Button */}
         <TouchableOpacity
+          ph-label="Logout"
           style={[styles.logoutButton, { backgroundColor: colors.error }]}
           onPress={handleLogout}
           activeOpacity={0.7}
@@ -856,6 +895,31 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  helpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  helpIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  helpTextContainer: {
+    flex: 1,
+  },
+  helpTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  helpSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });
 

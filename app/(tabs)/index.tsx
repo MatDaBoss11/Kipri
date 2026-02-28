@@ -2,7 +2,7 @@ import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import CombinedProductCard from '../../components/CombinedProductCard';
 import ProductComparisonModal from '../../components/ProductComparisonModal';
 import { useAppData } from '../../contexts/AppDataContext';
 import { useInitialCategory } from '../../contexts/InitialCategoryContext';
+import { useOnboarding } from '../../contexts/OnboardingContext';
 
 const { width } = Dimensions.get('window');
 
@@ -40,6 +41,8 @@ const PricesScreen = () => {
   } = useAppData();
 
   const { initialCategory, clearInitialCategory } = useInitialCategory();
+  const { registerTarget, setHasProducts } = useOnboarding();
+  const categoriesSectionRef = useRef<View>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -50,6 +53,20 @@ const PricesScreen = () => {
       clearInitialCategory();
     }
   }, [initialCategory, clearInitialCategory]);
+
+  // Report product availability for onboarding (skip card steps if empty)
+  useEffect(() => {
+    setHasProducts(allCombinedProducts.length > 0);
+  }, [allCombinedProducts.length, setHasProducts]);
+
+  // Register categories section for onboarding spotlight
+  const handleCategoriesSectionLayout = useCallback(() => {
+    categoriesSectionRef.current?.measureInWindow((x, y, w, h) => {
+      if (w > 0 && h > 0) {
+        registerTarget('categoriesSection', { x, y, width: w, height: h });
+      }
+    });
+  }, [registerTarget]);
   const [selectedCombinedProduct, setSelectedCombinedProduct] = useState<CombinedProduct | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -133,7 +150,7 @@ const PricesScreen = () => {
     refresh();
   };
 
-  const renderCombinedProductCard = ({ item }: { item: CombinedProduct }) => {
+  const renderCombinedProductCard = ({ item, index }: { item: CombinedProduct; index: number }) => {
     return (
       <CombinedProductCard
         combinedProduct={item}
@@ -141,6 +158,7 @@ const PricesScreen = () => {
         colors={colors}
         colorScheme={colorScheme}
         promotions={promotions}
+        isFirstCard={index === 0}
       />
     );
   };
@@ -157,6 +175,7 @@ const PricesScreen = () => {
           <Text style={[styles.headerSubtitle, { color: colors.text }]}>Prices</Text>
         </View>
         <TouchableOpacity
+          ph-label="Refresh Prices"
           style={[styles.refreshButton, { backgroundColor: '#3B82F6' }]}
           onPress={handleRefreshData}
           disabled={isRefreshing}
@@ -171,7 +190,11 @@ const PricesScreen = () => {
       </View>
 
       {/* Categories Section */}
-      <View style={styles.categoriesSection}>
+      <View
+        ref={categoriesSectionRef}
+        onLayout={handleCategoriesSectionLayout}
+        style={styles.categoriesSection}
+      >
         <Text style={[styles.categoriesTitle, { color: colors.text }]}>Categories</Text>
 
         <ScrollView
@@ -182,6 +205,7 @@ const PricesScreen = () => {
         >
           {CATEGORIES.map((category) => (
             <TouchableOpacity
+              ph-label="Category Filter"
               key={category.name}
               style={[
                 styles.categoryButton,

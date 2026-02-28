@@ -36,7 +36,7 @@ class GeminiApiService {
         apiKey: apiKey,
       });
 
-      console.log('OpenAI API client (GeminiApiService) initialized successfully');
+      if (__DEV__) console.log('OpenAI API client (GeminiApiService) initialized successfully');
     } catch (error) {
       console.error('Failed to initialize OpenAI API client:', error);
     }
@@ -249,7 +249,7 @@ class GeminiApiService {
 
       const text = response.choices[0].message.content || "";
 
-      console.log('OpenAI test response:', text);
+      if (__DEV__) console.log('OpenAI test response:', text);
       return text.includes('API test successful');
 
     } catch (error) {

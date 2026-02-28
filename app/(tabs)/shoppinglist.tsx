@@ -189,6 +189,7 @@ const ShoppingListScreen = () => {
         </View>
         {savedItems.length > 0 && (
           <TouchableOpacity
+            ph-label="Clear Shopping List"
             style={[styles.clearButton, { backgroundColor: '#ef4444' }]}
             onPress={handleClearAll}
             activeOpacity={0.7}

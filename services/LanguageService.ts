@@ -39,7 +39,7 @@ class LanguageService {
   public async setLanguage(language: Language): Promise<void> {
     try {
       await AsyncStorage.setItem(LANGUAGE_KEY, language);
-      console.log('[LanguageService] Language set to:', language);
+      if (__DEV__) console.log('[LanguageService] Language set to:', language);
     } catch (error) {
       console.error('[LanguageService] Error setting language:', error);
       throw error;

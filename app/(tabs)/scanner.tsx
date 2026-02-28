@@ -4,8 +4,8 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,18 +20,20 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostHog } from 'posthog-react-native';
 import { CATEGORIES } from '../../constants/categories';
 import BackendReplicaService from '../../services/BackendReplicaService';
 
-// TODO: Replace with dynamic stores from StoreService.getInstance().getAllStores()
-// This is a temporary fallback until store selection is migrated to use database stores
-const DEFAULT_STORES = ['Winners', 'Kingsavers', 'Super U'];
 import DataCacheService from '../../services/DataCacheService';
 import KipriBackendService from '../../services/KipriBackendService';
 import OpenAiService from '../../services/OpenAiService';
 import StoreMatchingService from '../../services/StoreMatchingService';
 import StoreService from '../../services/StoreService';
 import { useStorePreferences } from '../../contexts/StorePreferencesContext';
+import { useActiveStore } from '../../contexts/ActiveStoreContext';
+import CameraScannerView from '../../components/CameraScannerView';
+import ScannerTipOverlay from '../../components/onboarding/ScannerTipOverlay';
+import { useOnboarding } from '../../contexts/OnboardingContext';
 import { AppMode, ReviewedReceiptItem, Store } from '../../types';
 
 interface StoreComparison {
@@ -53,15 +55,22 @@ const ScannerScreen = () => {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const posthog = usePostHog();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const params = useLocalSearchParams();
+  const navigation = useNavigation();
 
   const [showModeSelection, setShowModeSelection] = useState(!params.mode);
   const [mode, setMode] = useState<AppMode>(
     params.mode === 'update' ? AppMode.UPDATE : AppMode.ADD
   );
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Scanner onboarding tip
+  const { hasSeenScannerTip, markScannerTipSeen } = useOnboarding();
+  const [showScannerTip, setShowScannerTip] = useState(false);
+  const [pendingMode, setPendingMode] = useState<AppMode | null>(null);
 
   // Form states (ADD/UPDATE mode)
   const [receiptImage, setReceiptImage] = useState<string | null>(null);
@@ -87,10 +96,14 @@ const ScannerScreen = () => {
   // User's preferred stores from context
   const { selectedStores: userPreferredStores } = useStorePreferences();
 
-  // Get the user's preferred store names (fallback to DEFAULT_STORES)
+  // Active store session (sticky store for 30 min)
+  const { activeStoreName, setActiveStore } = useActiveStore();
+  const [storeAutoFilled, setStoreAutoFilled] = useState(false);
+
+  // Get the user's preferred store names
   const preferredStoreNames = userPreferredStores && userPreferredStores.length > 0
     ? userPreferredStores.map(s => s.name)
-    : DEFAULT_STORES;
+    : ['Winners', 'Kingsavers', 'Super U'];
 
   // Load all stores when "Other" is tapped
   const loadAllStores = async () => {
@@ -129,6 +142,13 @@ const ScannerScreen = () => {
     startAnimations();
   }, [startAnimations]);
 
+  // Hide tab bar when in camera/scanner mode, show on mode selection
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: showModeSelection ? undefined : { display: 'none' },
+    });
+  }, [showModeSelection, navigation]);
+
   // Pre-fill form when coming from navigation
   useEffect(() => {
     if (params.mode === 'update') {
@@ -144,12 +164,41 @@ const ScannerScreen = () => {
     }
   }, [params.mode, params.productName, params.size, params.currentPrice, params.store, params.category]);
 
+  // Auto-fill store from active session (sticky store)
+  useEffect(() => {
+    if (!activeStoreName) return;
+    // Don't override if already set by navigation params or OCR
+    if (!selectedStore && !params.store) {
+      setSelectedStore(activeStoreName);
+      setStoreAutoFilled(true);
+    }
+  }, [activeStoreName, showModeSelection]);
+
   const selectMode = (selectedMode: AppMode) => {
+    posthog.capture('scanner_mode_selected', { mode: selectedMode });
+
+    // Show scanner tip if user hasn't seen it for this mode
+    if (!hasSeenScannerTip(selectedMode)) {
+      setPendingMode(selectedMode);
+      setShowScannerTip(true);
+      return;
+    }
+
     setMode(selectedMode);
     setShowModeSelection(false);
   };
 
-  // Update pickReceiptImage to allow both camera and gallery selection
+  const handleScannerTipDismiss = () => {
+    if (pendingMode) {
+      markScannerTipSeen(pendingMode);
+      setMode(pendingMode);
+      setShowScannerTip(false);
+      setShowModeSelection(false);
+      setPendingMode(null);
+    }
+  };
+
+  // Legacy image picker functions (kept for backwards compatibility)
   const pickReceiptImage = async () => {
     try {
       // On emulator or if user prefers, show options for camera or gallery
@@ -376,8 +425,13 @@ const ScannerScreen = () => {
           console.log('Auto-filled size:', product.size);
         }
 
-        // Reset store first
-        setSelectedStore('');
+        // Keep active store if available, otherwise reset
+        if (activeStoreName) {
+          setSelectedStore(activeStoreName);
+          setStoreAutoFilled(true);
+        } else {
+          setSelectedStore('');
+        }
         setSelectedCategories([]);
 
         // Automatically detect category if we have a product name
@@ -547,7 +601,13 @@ const ScannerScreen = () => {
     setSavingsData(null);
     setReviewItems([]);
     setReceiptPhotoUris([]);
-    setReceiptStore('');
+    // Keep active store if available
+    if (activeStoreName) {
+      setReceiptStore(activeStoreName);
+      setStoreAutoFilled(true);
+    } else {
+      setReceiptStore('');
+    }
     setShowReceiptReview(false);
     setShowModeSelection(true);
   };
@@ -612,11 +672,16 @@ const ScannerScreen = () => {
 
       console.log(`${allItems.length} total items -> ${uniqueItems.length} unique after cross-photo dedup`);
 
-      // Step 3: Match store name
+      // Step 3: Match store name (OCR > active store > empty)
       const storeMatch = StoreMatchingService.matchStoreName(detectedStoreName);
       if (storeMatch.matched) {
         setReceiptStore(storeMatch.storeName);
+        setStoreAutoFilled(false);
         console.log(`Store matched: ${storeMatch.storeName} (${storeMatch.confidence})`);
+      } else if (activeStoreName) {
+        setReceiptStore(activeStoreName);
+        setStoreAutoFilled(true);
+        console.log(`Store auto-filled from active session: ${activeStoreName}`);
       } else {
         setReceiptStore('');
         console.log('Store not matched, user must select manually');
@@ -687,6 +752,7 @@ const ScannerScreen = () => {
 
       const crossPhotoDupes = allItems.length - uniqueItems.length;
       const dbDupes = reviewed.filter(i => i.isDuplicate).length;
+      posthog.capture('receipt_scanned', { items_count: reviewed.length, photos_count: receiptPhotoUris.length, store: receiptStore, duplicates: dbDupes });
       console.log(`Receipt review ready: ${reviewed.length} items, ${crossPhotoDupes} cross-photo dupes removed, ${dbDupes} existing in database`);
 
     } catch (error: any) {
@@ -754,6 +820,7 @@ const ScannerScreen = () => {
         savings.savedCount = result.saved;
         savings.updatedCount = result.updated;
 
+        posthog.capture('receipt_products_saved', { saved: result.saved, updated: result.updated, store: receiptStore });
         // Always show the summary modal
         setSavingsData(savings);
         setShowSavingsModal(true);
@@ -867,6 +934,7 @@ const ScannerScreen = () => {
 
       if (result) {
         await cacheService.invalidateProducts();
+        posthog.capture('product_added', { product: productName.trim(), store: selectedStore, price: price.trim(), categories: selectedCategories });
         Alert.alert('Success', 'Product added successfully! Your new product is now available in the price list.');
         clearForm();
       } else {
@@ -908,6 +976,7 @@ const ScannerScreen = () => {
 
         if (result) {
           await cacheService.invalidateProducts();
+          posthog.capture('product_updated', { product: productName.trim(), store: selectedStore, price: price.trim() });
           Alert.alert('Success', 'Product updated successfully! The price list now reflects your changes.');
           clearForm();
         } else {
@@ -931,7 +1000,13 @@ const ScannerScreen = () => {
     setBrand('');
     setSize('');
     setPrice('');
-    setSelectedStore('');
+    // Keep active store if available
+    if (activeStoreName) {
+      setSelectedStore(activeStoreName);
+      setStoreAutoFilled(true);
+    } else {
+      setSelectedStore('');
+    }
     setSelectedCategories([]);
   };
 
@@ -979,6 +1054,211 @@ const ScannerScreen = () => {
         return [...prev, categoryName];
       }
     });
+  };
+
+  // ==================== CAMERA SCANNER CALLBACKS ====================
+
+  const handleCameraProductComplete = async (data: {
+    productName: string;
+    brand: string;
+    size: string;
+    price: string;
+    categories: string[];
+    priceTagImage: string;
+    productImage?: string;
+    store: string;
+  }): Promise<boolean> => {
+    try {
+      if (mode === AppMode.ADD) {
+        // Validate price
+        if (!isValidPrice(data.price)) return false;
+
+        const product = {
+          product: data.productName.trim(),
+          brand: data.brand.trim().toUpperCase(),
+          price: data.price.trim(),
+          size: data.size.trim(),
+          store: data.store,
+          categories: data.categories.length > 0 ? data.categories : ['miscellaneous'],
+          imageSource: data.productImage || undefined,
+          timestamp: new Date().toISOString(),
+        };
+
+        const result = await KipriBackendService.saveProduct(product);
+        if (result) {
+          await cacheService.invalidateProducts();
+          posthog.capture('product_added', {
+            product: data.productName.trim(),
+            store: data.store,
+            price: data.price.trim(),
+            categories: data.categories,
+          });
+          return true;
+        }
+      } else if (mode === AppMode.UPDATE) {
+        // Search for existing product to update
+        const searchResults = await KipriBackendService.searchProducts(data.productName.trim());
+        if (searchResults && searchResults.length > 0) {
+          const existingProduct = searchResults[0];
+          const updates = {
+            product: data.productName.trim(),
+            brand: data.brand.trim().toUpperCase(),
+            price: data.price.trim(),
+            size: data.size.trim(),
+            store: data.store,
+            categories: data.categories.length > 0 ? data.categories : ['miscellaneous'],
+            created_at: new Date().toISOString(),
+          };
+
+          const result = await KipriBackendService.updateProduct(existingProduct.id!, updates);
+          if (result) {
+            await cacheService.invalidateProducts();
+            posthog.capture('product_updated', {
+              product: data.productName.trim(),
+              store: data.store,
+              price: data.price.trim(),
+            });
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Camera product save error:', error);
+      return false;
+    }
+  };
+
+  const handleCameraReceiptPhotosReady = (photoUris: string[]) => {
+    // Set the receipt photos and trigger processing
+    setReceiptPhotoUris(photoUris);
+    // Immediately trigger the receipt scan process
+    handleReceiptScanFromCamera(photoUris);
+  };
+
+  const handleReceiptScanFromCamera = async (photoUris: string[]) => {
+    setIsProcessing(true);
+    setScanProgress('');
+
+    try {
+      const allItems: { product_name: string; abbreviated_name: string; brand: string; price: number; quantity: number; size: string }[] = [];
+      let detectedStoreName = '';
+
+      for (let i = 0; i < photoUris.length; i++) {
+        setScanProgress(`Scanning photo ${i + 1} of ${photoUris.length}...`);
+        const result = await BackendReplicaService.processReceipt(photoUris[i]);
+        if (result.success && result.data) {
+          if (!detectedStoreName && result.data.store_name) {
+            detectedStoreName = result.data.store_name;
+          }
+          allItems.push(...result.data.items);
+        }
+      }
+
+      if (allItems.length === 0) {
+        Alert.alert('Error', 'No items could be extracted. Please try again with clearer images.');
+        setIsProcessing(false);
+        setScanProgress('');
+        setShowModeSelection(true);
+        return;
+      }
+
+      // Deduplicate
+      setScanProgress('Removing duplicates...');
+      const uniqueItems: typeof allItems = [];
+      const seenNames = new Set<string>();
+      for (const item of allItems) {
+        const norm = item.product_name.trim().toLowerCase();
+        if (!seenNames.has(norm)) {
+          seenNames.add(norm);
+          uniqueItems.push(item);
+        }
+      }
+
+      // Match store
+      const storeMatch = StoreMatchingService.matchStoreName(detectedStoreName);
+      if (storeMatch.matched) {
+        setReceiptStore(storeMatch.storeName);
+        setStoreAutoFilled(false);
+      } else if (activeStoreName) {
+        setReceiptStore(activeStoreName);
+        setStoreAutoFilled(true);
+      } else {
+        setReceiptStore('');
+      }
+
+      // Categorize
+      setScanProgress('Categorizing items...');
+      const productNames = uniqueItems.map(item => item.product_name);
+      let categoryResults;
+      try {
+        categoryResults = await OpenAiService.batchCategorizeTexts(productNames);
+      } catch {
+        categoryResults = productNames.map(() => OpenAiService.quickCategorize(''));
+      }
+
+      // Check duplicates
+      setScanProgress('Checking for existing products...');
+      let existingProducts: any[] = [];
+      if (storeMatch.matched) {
+        try {
+          const storeProducts = await KipriBackendService.getProducts({
+            filters: { store: storeMatch.storeName },
+            limit: 500,
+          });
+          existingProducts = storeProducts || [];
+        } catch {}
+      }
+
+      // Build review items
+      const reviewed: ReviewedReceiptItem[] = uniqueItems.map((item, index) => {
+        const catResult = categoryResults[index];
+        const categoryName = catResult?.isFood && catResult.confidence > 0.5
+          ? catResult.category : 'miscellaneous';
+        const matchedCat = CATEGORIES.find(cat =>
+          cat.name.toLowerCase() === categoryName.toLowerCase() ||
+          cat.displayName.toLowerCase() === categoryName.toLowerCase(),
+        );
+        const duplicate = existingProducts.find(p =>
+          p.product?.toLowerCase() === item.product_name.toLowerCase(),
+        );
+
+        return {
+          product_name: item.product_name,
+          abbreviated_name: item.abbreviated_name,
+          brand: item.brand,
+          price: item.price,
+          quantity: item.quantity,
+          size: item.size,
+          included: true,
+          categories: [matchedCat?.name || 'miscellaneous'],
+          store: storeMatch.matched ? storeMatch.storeName : '',
+          isDuplicate: !!duplicate,
+          existingProductId: duplicate?.id,
+        };
+      });
+
+      setReviewItems(reviewed);
+      setShowReceiptReview(true);
+      setScanProgress('');
+      posthog.capture('receipt_scanned', {
+        items_count: reviewed.length,
+        photos_count: photoUris.length,
+        store: receiptStore,
+        duplicates: reviewed.filter(i => i.isDuplicate).length,
+      });
+    } catch (error) {
+      console.error('Error processing receipt:', error);
+      Alert.alert('Error', 'Failed to process receipt. Please try again.');
+      setShowModeSelection(true);
+    } finally {
+      setIsProcessing(false);
+      setScanProgress('');
+    }
+  };
+
+  const handleCameraCancel = () => {
+    setShowModeSelection(true);
   };
 
   // ==================== SAVINGS COMPARISON MODAL ====================
@@ -1227,6 +1507,7 @@ const ScannerScreen = () => {
 
             {/* Dismiss button */}
             <TouchableOpacity
+              ph-label="Savings Dismiss"
               style={[savingsStyles.dismissButton, { backgroundColor: headerColor }]}
               onPress={dismissSavingsModal}
             >
@@ -1260,6 +1541,7 @@ const ScannerScreen = () => {
 
           {/* Hero: Scan Receipt */}
           <TouchableOpacity
+            ph-label="Scan Receipt Mode"
             style={styles.heroReceiptButton}
             onPress={() => selectMode(AppMode.RECEIPT)}
             activeOpacity={0.85}
@@ -1281,6 +1563,7 @@ const ScannerScreen = () => {
           {/* Secondary: Add & Update */}
           <View style={styles.secondaryButtonsRow}>
             <TouchableOpacity
+              ph-label="Add Product Mode"
               style={styles.secondaryButton}
               onPress={() => selectMode(AppMode.ADD)}
               activeOpacity={0.8}
@@ -1296,6 +1579,7 @@ const ScannerScreen = () => {
             </TouchableOpacity>
 
             <TouchableOpacity
+              ph-label="Update Product Mode"
               style={styles.secondaryButton}
               onPress={() => selectMode(AppMode.UPDATE)}
               activeOpacity={0.8}
@@ -1311,6 +1595,14 @@ const ScannerScreen = () => {
             </TouchableOpacity>
           </View>
         </Animated.View>
+
+        {/* Scanner onboarding tip overlay */}
+        {showScannerTip && pendingMode && (
+          <ScannerTipOverlay
+            mode={pendingMode}
+            onDismiss={handleScannerTipDismiss}
+          />
+        )}
       </LinearGradient>
     );
   }
@@ -1328,6 +1620,7 @@ const ScannerScreen = () => {
         {renderSavingsModal()}
         <BlurView style={styles.header} tint={colorScheme || 'light'} intensity={80}>
           <TouchableOpacity
+            ph-label="Back From Review"
             style={[styles.backButton, { backgroundColor: '#10b981' }]}
             onPress={() => {
               setShowReceiptReview(false);
@@ -1352,6 +1645,7 @@ const ScannerScreen = () => {
                 {preferredStoreNames.map((store) => (
                   <TouchableOpacity
                     key={store}
+                    ph-label="Receipt Store Select"
                     style={[
                       styles.storeChip,
                       {
@@ -1359,7 +1653,7 @@ const ScannerScreen = () => {
                         borderColor: receiptStore === store ? '#10b981' : colors.border,
                       }
                     ]}
-                    onPress={() => { setReceiptStore(store); setShowOtherStores(false); }}
+                    onPress={() => { setReceiptStore(store); setActiveStore(store); setStoreAutoFilled(false); setShowOtherStores(false); }}
                   >
                     <Text style={[
                       styles.storeChipText,
@@ -1373,6 +1667,7 @@ const ScannerScreen = () => {
                 ))}
                 {/* Other button */}
                 <TouchableOpacity
+                  ph-label="Show Other Stores"
                   style={[
                     styles.storeChip,
                     {
@@ -1406,6 +1701,7 @@ const ScannerScreen = () => {
                       .map((store) => (
                         <TouchableOpacity
                           key={store.id}
+                          ph-label="Select Other Store"
                           style={[
                             styles.otherStoreChip,
                             {
@@ -1413,7 +1709,7 @@ const ScannerScreen = () => {
                               borderColor: receiptStore === store.name ? '#10b981' : colors.border,
                             }
                           ]}
-                          onPress={() => setReceiptStore(store.name)}
+                          onPress={() => { setReceiptStore(store.name); setActiveStore(store.name); setStoreAutoFilled(false); }}
                         >
                           <Text style={[
                             styles.otherStoreChipText,
@@ -1426,6 +1722,13 @@ const ScannerScreen = () => {
                   </View>
                 </View>
               )}
+
+              {/* Subtle auto-selected indicator */}
+              {storeAutoFilled && receiptStore && (
+                <Text style={[styles.autoFilledHint, { color: colors.text + '60' }]}>
+                  Auto-selected from your current session
+                </Text>
+              )}
             </View>
 
             {/* Summary Bar */}
@@ -1433,7 +1736,7 @@ const ScannerScreen = () => {
               <Text style={[styles.summaryText, { color: colors.text }]}>
                 {includedCount} of {totalCount} items selected
               </Text>
-              <TouchableOpacity onPress={toggleAllItems}>
+              <TouchableOpacity ph-label="Toggle All Items" onPress={toggleAllItems}>
                 <Text style={[styles.toggleAllText, { color: '#10b981' }]}>
                   {reviewItems.every(i => i.included) ? 'Deselect All' : 'Select All'}
                 </Text>
@@ -1456,6 +1759,7 @@ const ScannerScreen = () => {
                 {/* Top Row: Checkbox + Product Name */}
                 <View style={styles.receiptItemHeader}>
                   <TouchableOpacity
+                    ph-label="Receipt Item Toggle"
                     style={[
                       styles.checkbox,
                       {
@@ -1525,6 +1829,7 @@ const ScannerScreen = () => {
                     {CATEGORIES.map((cat) => (
                       <TouchableOpacity
                         key={cat.name}
+                        ph-label="Receipt Item Category"
                         style={[
                           styles.receiptCategoryChip,
                           {
@@ -1549,6 +1854,7 @@ const ScannerScreen = () => {
             ))}
             {/* Save Button */}
             <TouchableOpacity
+              ph-label="Save Receipt Items"
               style={[
                 styles.batchSaveButton,
                 {
@@ -1573,325 +1879,51 @@ const ScannerScreen = () => {
     );
   }
 
-  // ==================== RECEIPT CAPTURE SCREEN ====================
+  // ==================== RECEIPT CAPTURE → CAMERA UI ====================
   if (mode === AppMode.RECEIPT && !showReceiptReview) {
+    // Show processing screen while receipt is being analyzed
+    if (isProcessing) {
+      return (
+        <LinearGradient
+          colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
+          style={[styles.container, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }]}
+        >
+          <ActivityIndicator color={colors.primary} size="large" />
+          <Text style={[styles.processingText, { color: colors.text, marginTop: 16 }]}>
+            {scanProgress || 'Processing receipt...'}
+          </Text>
+        </LinearGradient>
+      );
+    }
+
     return (
-      <LinearGradient
-        colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
-        style={[styles.container, { paddingTop: insets.top }]}
-      >
-        <BlurView style={styles.header} tint={colorScheme || 'light'} intensity={80}>
-          <TouchableOpacity
-            style={[styles.backButton, { backgroundColor: '#10b981' }]}
-            onPress={() => {
-              setShowModeSelection(true);
-              setReceiptPhotoUris([]);
-            }}
-          >
-            <Text style={styles.backButtonText}>{"<"}</Text>
-          </TouchableOpacity>
-          <View style={styles.headerTitleRow}>
-            <Text style={[styles.kipriHeaderLogo, { color: '#10b981' }]}>Kipri</Text>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Scan Receipt</Text>
-          </View>
-          <View style={styles.headerSpacer} />
-        </BlurView>
-
-        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.receiptCaptureScrollContent}>
-          {/* Photo Grid */}
-          {receiptPhotoUris.length > 0 ? (
-            <>
-              <Text style={[styles.photoCountLabel, { color: colors.text }]}>
-                {receiptPhotoUris.length} photo{receiptPhotoUris.length !== 1 ? 's' : ''} added
-              </Text>
-              <View style={styles.photoGrid}>
-                {receiptPhotoUris.map((uri, index) => (
-                  <View key={index} style={[styles.photoThumbnailWrapper, { borderColor: colors.border }]}>
-                    <Image source={{ uri }} style={styles.photoThumbnail} contentFit="cover" />
-                    <View style={styles.photoNumberBadge}>
-                      <Text style={styles.photoNumberText}>{index + 1}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.photoRemoveButton}
-                      onPress={() => removeReceiptPhoto(index)}
-                    >
-                      <Text style={styles.photoRemoveText}>X</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-
-                {/* Add More Button (inline in grid) */}
-                <TouchableOpacity
-                  style={[styles.addMorePhotoButton, { borderColor: colors.border }]}
-                  onPress={pickReceiptPhoto}
-                >
-                  <Text style={styles.addMorePhotoIcon}>+</Text>
-                  <Text style={[styles.addMorePhotoText, { color: colors.text + '80' }]}>Add more</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.multiPhotoHint, { color: colors.text + '80' }]}>
-                Long receipt? Add multiple photos to capture all sections. Duplicates across photos are handled automatically.
-              </Text>
-            </>
-          ) : (
-            <TouchableOpacity
-              style={[styles.receiptImagePicker, { borderColor: colors.border }]}
-              onPress={pickReceiptPhoto}
-            >
-              <View style={styles.receiptPlaceholder}>
-                <Text style={styles.receiptPlaceholderIcon}>🧾</Text>
-                <Text style={[styles.receiptPlaceholderText, { color: colors.text }]}>
-                  Tap to photograph your receipt
-                </Text>
-                <Text style={[styles.receiptPlaceholderSubtext, { color: colors.text + '80' }]}>
-                  Long receipt? You can add multiple photos
-                </Text>
-              </View>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.scanReceiptButton,
-              {
-                backgroundColor: isProcessing || receiptPhotoUris.length === 0 ? '#9CA3AF' : '#10b981',
-                opacity: isProcessing ? 0.6 : 1,
-              }
-            ]}
-            onPress={handleReceiptScan}
-            disabled={isProcessing || receiptPhotoUris.length === 0}
-          >
-            {isProcessing ? (
-              <View style={styles.processingContainer}>
-                <ActivityIndicator color="white" size="small" />
-                <Text style={styles.processingText}>
-                  {scanProgress || 'Extracting items...'}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.scanReceiptButtonText}>
-                SCAN {receiptPhotoUris.length > 1 ? `${receiptPhotoUris.length} PHOTOS` : 'RECEIPT'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </ScrollView>
-      </LinearGradient>
+      <CameraScannerView
+        mode={AppMode.RECEIPT}
+        activeStoreName={activeStoreName}
+        setActiveStore={setActiveStore}
+        preferredStoreNames={preferredStoreNames}
+        onProductComplete={handleCameraProductComplete}
+        onReceiptPhotosReady={handleCameraReceiptPhotosReady}
+        onCancel={handleCameraCancel}
+        colors={colors}
+        colorScheme={colorScheme}
+      />
     );
   }
 
-  // ==================== ADD/UPDATE SCREEN (existing) ====================
+  // ==================== ADD/UPDATE → CAMERA UI ====================
   return (
-    <LinearGradient
-      colors={colorScheme === 'dark' ? ['#0F172A', '#1E293B', '#334155'] : ['#f5f5f5', '#f2f2f2', '#f3f3f3']}
-      style={[styles.container, { paddingTop: insets.top }]}
-    >
-      <BlurView style={styles.header} tint={colorScheme || 'light'} intensity={80}>
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.primary }]}
-          onPress={() => setShowModeSelection(true)}
-        >
-          <Text style={styles.backButtonText}>{"<"}</Text>
-        </TouchableOpacity>
-        <View style={styles.headerTitleRow}>
-          <Text style={[styles.kipriHeaderLogo, { color: colors.primary }]}>Kipri</Text>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            {mode === AppMode.ADD ? 'Add Product' : 'Update Product'}
-          </Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </BlurView>
-
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Receipt Image Section */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={[styles.imagePickerContainer, { borderColor: colors.border }]}
-            onPress={pickReceiptImage}
-          >
-            {receiptImage ? (
-              <Image source={{ uri: receiptImage }} style={styles.pickedImage} />
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                <Text style={styles.cameraIcon}>📷</Text>
-                <Text style={[styles.imagePlaceholderText, { color: colors.text }]}>
-                  Tap to capture price tag
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.scanButton,
-              {
-                backgroundColor: isProcessing ? colors.background : colors.primary,
-                opacity: isProcessing ? 0.6 : 1
-              }
-            ]}
-            onPress={handleScan}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <ActivityIndicator color="white" size="small" />
-            ) : (
-              <Text style={styles.scanButtonText}>SCAN & DETECT</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Form Fields */}
-        <View style={styles.formContainer}>
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Product Name</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              value={productName}
-              onChangeText={setProductName}
-              placeholder="Enter product name"
-              placeholderTextColor={colors.text + '80'}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Brand</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              value={brand}
-              onChangeText={(text) => setBrand(text.toUpperCase())}
-              placeholder="NESTLE, COCA COLA, DINA, etc."
-              placeholderTextColor={colors.text + '80'}
-              autoCapitalize="characters"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Size</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              value={size}
-              onChangeText={setSize}
-              placeholder="KG, G, L, ML, X6, X12"
-              placeholderTextColor={colors.text + '80'}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Price</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              value={price}
-              onChangeText={setPrice}
-              placeholder="Rs 12,50 or 12.50"
-              placeholderTextColor={colors.text + '80'}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Store</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.storeSelector}>
-              {DEFAULT_STORES.map((store) => (
-                <TouchableOpacity
-                  key={store}
-                  style={[
-                    styles.storeChip,
-                    {
-                      backgroundColor: selectedStore === store ? colors.primary : colors.card,
-                      borderColor: selectedStore === store ? colors.primary : colors.border,
-                    }
-                  ]}
-                  onPress={() => setSelectedStore(store)}
-                >
-                  <Text style={[
-                    styles.storeChipText,
-                    {
-                      color: selectedStore === store ? 'white' : colors.text,
-                    }
-                  ]}>
-                    {store}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          <View style={[styles.inputGroup, styles.categoriesInputGroup]}>
-            <View style={styles.categoriesHeader}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Categories (select one or more)</Text>
-            </View>
-
-            <View style={styles.categoriesContainer}>
-              {CATEGORIES.map((category) => (
-                <TouchableOpacity
-                  key={category.name}
-                  style={[
-                    styles.categoryChip,
-                    {
-                      backgroundColor: selectedCategories.includes(category.name) ? colors.primary : colors.card,
-                      borderColor: selectedCategories.includes(category.name) ? colors.primary : colors.border,
-                    }
-                  ]}
-                  onPress={() => toggleCategory(category.name)}
-                >
-                  <Text style={styles.categoryEmoji}>{category.emoji}</Text>
-                  <Text style={[
-                    styles.categoryChipText,
-                    {
-                      color: selectedCategories.includes(category.name) ? 'white' : colors.text,
-                    }
-                  ]}>
-                    {category.displayName}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Product Image Section (only for ADD mode) */}
-          {mode === AppMode.ADD && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>Product Image</Text>
-              <TouchableOpacity
-                style={[styles.productImageContainer, { borderColor: colors.border }]}
-                onPress={pickProductImage}
-              >
-                {productImage ? (
-                  <Image source={{ uri: productImage }} style={styles.productImagePreview} />
-                ) : (
-                  <View style={styles.productImagePlaceholder}>
-                    <Text style={styles.addImageIcon}>🖼️</Text>
-                    <Text style={[styles.addImageText, { color: colors.text }]}>
-                      Tap to upload product image
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              {
-                backgroundColor: isProcessing ? colors.background : colors.primary,
-                opacity: isProcessing ? 0.6 : 1
-              }
-            ]}
-            onPress={validateAndSubmit}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <ActivityIndicator color="white" size="small" />
-            ) : (
-              <Text style={styles.submitButtonText}>
-                {mode === AppMode.ADD ? 'ADD TO KIPRI' : 'UPDATE IN KIPRI'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </LinearGradient>
+    <CameraScannerView
+      mode={mode}
+      activeStoreName={activeStoreName}
+      setActiveStore={setActiveStore}
+      preferredStoreNames={preferredStoreNames}
+      onProductComplete={handleCameraProductComplete}
+      onReceiptPhotosReady={handleCameraReceiptPhotosReady}
+      onCancel={handleCameraCancel}
+      colors={colors}
+      colorScheme={colorScheme}
+    />
   );
 };
 
@@ -2140,6 +2172,12 @@ const styles = StyleSheet.create({
   storeChipText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  autoFilledHint: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 6,
+    paddingLeft: 4,
   },
   categoriesHeader: {
     flexDirection: 'row',

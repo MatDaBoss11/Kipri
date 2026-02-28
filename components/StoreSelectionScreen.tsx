@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,7 @@ import {
     StyleSheet,
     Animated,
 } from 'react-native';
-import MapView, { Marker, Callout, Region } from 'react-native-maps';
+import MapView, { Marker, Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useColorScheme } from '../hooks/useColorScheme';
@@ -44,6 +44,10 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
 
+    // Floating info card — shown when a marker is tapped
+    const [focusedStoreId, setFocusedStoreId] = useState<string | null>(null);
+    const infoCardOpacity = useRef(new Animated.Value(0)).current;
+
     // Toast state
     const [toastMsg, setToastMsg] = useState<string | null>(null);
     const toastOpacity = useRef(new Animated.Value(0)).current;
@@ -63,7 +67,7 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
                     setTimeout(() => {
                         mapRef.current?.fitToCoordinates(
                             withCoords.map(s => ({ latitude: s.latitude!, longitude: s.longitude! })),
-                            { edgePadding: { top: 150, right: 60, bottom: 280, left: 60 }, animated: true },
+                            { edgePadding: { top: 150, right: 60, bottom: 280, left: 60 }, animated: false },
                         );
                     }, 500);
                 }
@@ -87,14 +91,43 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
         ]).start(() => setToastMsg(null));
     };
 
+    // ── Show floating info card ──────────────────────────────
+    const showInfoCard = useCallback((storeId: string) => {
+        setFocusedStoreId(storeId);
+        infoCardOpacity.setValue(0);
+        Animated.timing(infoCardOpacity, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+        }).start();
+    }, [infoCardOpacity]);
+
+    const hideInfoCard = useCallback(() => {
+        Animated.timing(infoCardOpacity, {
+            toValue: 0,
+            duration: 150,
+            useNativeDriver: true,
+        }).start(() => setFocusedStoreId(null));
+    }, [infoCardOpacity]);
+
     // ── Selection logic ─────────────────────────────────────
     const handleMarkerPress = (storeId: string) => {
+        // Show info card
+        showInfoCard(storeId);
+
+        // Toggle selection
         if (selectedIds.includes(storeId)) {
             setSelectedIds(prev => prev.filter(id => id !== storeId));
         } else if (selectedIds.length < 3) {
             setSelectedIds(prev => [...prev, storeId]);
         } else {
             showToast('You can only select 3 stores. Deselect one first.');
+        }
+    };
+
+    const handleMapPress = () => {
+        if (focusedStoreId) {
+            hideInfoCard();
         }
     };
 
@@ -126,6 +159,12 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
         .map(id => stores.find(s => s.id === id))
         .filter((s): s is Store => !!s);
 
+    const focusedStore = focusedStoreId
+        ? stores.find(s => s.id === focusedStoreId) ?? null
+        : null;
+
+    const isFocusedSelected = focusedStoreId ? selectedIds.includes(focusedStoreId) : false;
+
     // ── Loading state ───────────────────────────────────────
     if (isLoading) {
         return (
@@ -141,7 +180,7 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
     // ── Main render ─────────────────────────────────────────
     return (
         <View style={styles.container}>
-            {/* ── Full-screen map ────────────────────────── */}
+            {/* ── Full-screen map (NO Callouts — prevents iOS crash) */}
             <MapView
                 ref={mapRef}
                 style={styles.map}
@@ -149,7 +188,7 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
                 showsUserLocation={false}
                 showsMyLocationButton={false}
                 toolbarEnabled={false}
-                clusteringEnabled={false}
+                onPress={handleMapPress}
             >
                 {stores.map(store => {
                     const isSelected = selectedIds.includes(store.id);
@@ -164,23 +203,7 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
                             onPress={() => handleMarkerPress(store.id)}
                             tracksViewChanges={false}
                             zIndex={isSelected ? 2 : 1}
-                        >
-                            <Callout tooltip={false}>
-                                <View style={styles.callout}>
-                                    <Text style={styles.calloutTitle}>{store.name}</Text>
-                                    <Text style={styles.calloutSub}>
-                                        {store.chain}
-                                        {store.location ? ` \u2022 ${store.location}` : ''}
-                                    </Text>
-                                    <Text style={[
-                                        styles.calloutStatus,
-                                        { color: isSelected ? '#22C55E' : '#94A3B8' },
-                                    ]}>
-                                        {isSelected ? 'Selected' : 'Tap pin to select'}
-                                    </Text>
-                                </View>
-                            </Callout>
-                        </Marker>
+                        />
                     );
                 })}
             </MapView>
@@ -206,6 +229,41 @@ const StoreSelectionScreen = ({ onComplete }: StoreSelectionScreenProps) => {
                     </Text>
                 </View>
             </View>
+
+            {/* ── Floating info card (replaces Callout) ───── */}
+            {focusedStore && (
+                <Animated.View
+                    style={[styles.infoCard, { opacity: infoCardOpacity }]}
+                    pointerEvents="box-none"
+                >
+                    <View style={[
+                        styles.infoCardInner,
+                        {
+                            backgroundColor: colorScheme === 'dark'
+                                ? 'rgba(30, 41, 59, 0.95)'
+                                : 'rgba(255, 255, 255, 0.95)',
+                        },
+                    ]}>
+                        <View style={styles.infoCardContent}>
+                            <Text style={[styles.infoCardTitle, { color: colors.text }]}>
+                                {focusedStore.name}
+                            </Text>
+                            <Text style={[styles.infoCardSub, { color: colorScheme === 'dark' ? '#94A3B8' : '#64748B' }]}>
+                                {focusedStore.chain}
+                                {focusedStore.location ? ` \u2022 ${focusedStore.location}` : ''}
+                            </Text>
+                        </View>
+                        <View style={[
+                            styles.infoCardBadge,
+                            { backgroundColor: isFocusedSelected ? '#22C55E' : '#94A3B8' },
+                        ]}>
+                            <Text style={styles.infoCardBadgeText}>
+                                {isFocusedSelected ? 'Selected' : 'Tap pin'}
+                            </Text>
+                        </View>
+                    </View>
+                </Animated.View>
+            )}
 
             {/* ── Toast message ──────────────────────────── */}
             {toastMsg && (
@@ -341,29 +399,48 @@ const styles = StyleSheet.create({
         marginTop: 3,
     },
 
-    // Callout
-    callout: {
-        padding: 8,
-        minWidth: 140,
+    // Floating info card (replaces native Callout)
+    infoCard: {
+        position: 'absolute',
+        top: '42%',
+        left: 24,
+        right: 24,
         alignItems: 'center',
     },
-    calloutTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#11181C',
-        textAlign: 'center',
+    infoCardInner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 14,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+        elevation: 8,
+        gap: 12,
     },
-    calloutSub: {
+    infoCardContent: {
+        flex: 1,
+    },
+    infoCardTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    infoCardSub: {
         fontSize: 12,
         fontWeight: '500',
-        color: '#64748B',
         marginTop: 2,
-        textAlign: 'center',
     },
-    calloutStatus: {
+    infoCardBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 10,
+    },
+    infoCardBadgeText: {
+        color: '#FFFFFF',
         fontSize: 11,
-        fontWeight: '600',
-        marginTop: 4,
+        fontWeight: '700',
     },
 
     // Toast

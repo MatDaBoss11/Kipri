@@ -33,7 +33,7 @@ class OpenAiService {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     };
-    console.log('OpenAI Service - Using secure Edge Functions');
+    if (__DEV__) console.log('OpenAI Service - Using secure Edge Functions');
   }
 
   async categorizeText(text: string): Promise<FoodCategoryResult> {
@@ -109,7 +109,7 @@ class OpenAiService {
 
       if (response.ok) {
         const result = await response.json();
-        console.log('Edge Function test response:', result);
+        if (__DEV__) console.log('Edge Function test response:', result);
         return result.success === true;
       }
 

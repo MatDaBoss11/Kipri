@@ -164,8 +164,7 @@ export default function BackendDemoScreen() {
         <Text style={styles.sectionTitle}>Service Status</Text>
         {serviceStatus ? (
           <View>
-            <ServiceStatusIndicator service="Google Vision" status={serviceStatus.vision} />
-            <ServiceStatusIndicator service="Gemini AI" status={serviceStatus.openai} />
+            <ServiceStatusIndicator service="Edge Functions" status={serviceStatus.edgeFunctions} />
             <ServiceStatusIndicator service="OpenAI Categorization" status={serviceStatus.openai_categorization} />
             <ServiceStatusIndicator service="Supabase" status={serviceStatus.supabase} />
           </View>

@@ -1,17 +1,30 @@
 import { Tabs } from 'expo-router';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import { Platform, View, StyleSheet, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { usePostHog } from 'posthog-react-native';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { useOnboarding } from '../../contexts/OnboardingContext';
+import OnboardingOverlay from '../../components/onboarding/OnboardingOverlay';
+
+// Onboarding target keys for tab icons
+const TAB_TARGET_KEYS: Record<string, string> = {
+  promotions: 'tab-promotions',
+  scanner: 'tab-scanner',
+  shoppinglist: 'tab-shoppinglist',
+};
 
 // Custom Tab Bar Component
 function CustomTabBar({ state, descriptors, navigation }: any) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const posthog = usePostHog();
+  const { registerTarget } = useOnboarding();
+  const tabRefs = useRef<Record<string, View | null>>({});
 
   const tabs = [
     { name: 'index', icon: 'shopping-bag', iconOutline: 'shopping-bag' },
@@ -20,6 +33,23 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     { name: 'shoppinglist', icon: 'shopping-cart', iconOutline: 'shopping-cart' },
     { name: 'settings', icon: 'settings', iconOutline: 'settings' },
   ];
+
+  // Hide tab bar if the focused screen requests it (e.g. camera UI)
+  const focusedRoute = state.routes[state.index];
+  const focusedOptions = descriptors[focusedRoute.key]?.options as any;
+  if (focusedOptions?.tabBarStyle?.display === 'none') {
+    return null;
+  }
+
+  const handleTabLayout = (tabName: string, ref: View | null) => {
+    const targetKey = TAB_TARGET_KEYS[tabName];
+    if (!targetKey || !ref) return;
+    ref.measureInWindow((x, y, width, height) => {
+      if (width > 0 && height > 0) {
+        registerTarget(targetKey, { x, y, width, height });
+      }
+    });
+  };
 
   return (
     <View style={[
@@ -42,6 +72,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           });
 
           if (!isFocused && !event.defaultPrevented) {
+            posthog.screen(route.name);
             navigation.navigate(route.name);
           }
         };
@@ -54,10 +85,16 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
               onPress={onPress}
               style={styles.centerTabButton}
             >
-              <View style={[
-                styles.centerButtonCircle,
-                { backgroundColor: '#10b981' }
-              ]}>
+              <View
+                ref={(ref) => {
+                  tabRefs.current[tab.name] = ref;
+                }}
+                onLayout={() => handleTabLayout(tab.name, tabRefs.current[tab.name])}
+                style={[
+                  styles.centerButtonCircle,
+                  { backgroundColor: '#10b981' }
+                ]}
+              >
                 <MaterialIcons
                   name="add"
                   size={32}
@@ -74,7 +111,13 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             onPress={onPress}
             style={styles.tabButton}
           >
-            <View style={styles.iconWrapper}>
+            <View
+              ref={(ref) => {
+                tabRefs.current[tab.name] = ref;
+              }}
+              onLayout={() => handleTabLayout(tab.name, tabRefs.current[tab.name])}
+              style={styles.iconWrapper}
+            >
               <MaterialIcons
                 name={tab.icon as any}
                 size={24}
@@ -154,22 +197,25 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <Tabs
-      tabBar={(props) => <CustomTabBar {...props} />}
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        sceneContainerStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#f3f3f3',
-          paddingBottom: 100,
-        },
-      }}
-    >
-      <Tabs.Screen name="index" />
-      <Tabs.Screen name="promotions" />
-      <Tabs.Screen name="scanner" />
-      <Tabs.Screen name="shoppinglist" />
-      <Tabs.Screen name="settings" />
-    </Tabs>
+    <View style={{ flex: 1 }}>
+      <Tabs
+        tabBar={(props) => <CustomTabBar {...props} />}
+        screenOptions={{
+          headerShown: false,
+          tabBarShowLabel: false,
+          sceneContainerStyle: {
+            backgroundColor: colorScheme === 'dark' ? '#0F172A' : '#f3f3f3',
+            paddingBottom: 100,
+          },
+        }}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="promotions" />
+        <Tabs.Screen name="scanner" />
+        <Tabs.Screen name="shoppinglist" />
+        <Tabs.Screen name="settings" />
+      </Tabs>
+      <OnboardingOverlay />
+    </View>
   );
 }

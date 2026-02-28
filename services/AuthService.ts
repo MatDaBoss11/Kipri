@@ -1,13 +1,20 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { createClient, User } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Initialize Supabase with AsyncStorage for persistence
+// Secure storage adapter for Supabase auth (encrypts tokens at rest)
+const secureStoreAdapter = {
+    getItem: (key: string) => SecureStore.getItemAsync(key),
+    setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
+    removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+};
+
+// Initialize Supabase with SecureStore for encrypted persistence
 export const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
-        storage: AsyncStorage,
+        storage: secureStoreAdapter,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
@@ -17,25 +24,10 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
 // Handle invalid refresh tokens on startup - clear stale session so user can re-login
 supabase.auth.onAuthStateChange((event, session) => {
     if (event === 'TOKEN_REFRESHED' && !session) {
-        console.log('Token refresh failed, clearing stale session');
-        supabase.auth.signOut();
+        if (__DEV__) console.log('[AuthService] Token refresh failed, clearing stale session');
+        supabase.auth.signOut().catch(() => {});
     }
 });
-
-// Proactively check for stale sessions on init
-(async () => {
-    try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-            console.log('Stale session detected, clearing:', error.message);
-            await AsyncStorage.removeItem('sb-' + supabaseUrl.split('//')[1]?.split('.')[0] + '-auth-token');
-            await supabase.auth.signOut();
-        }
-    } catch (e) {
-        console.log('Session check error, clearing auth state:', e);
-        await supabase.auth.signOut();
-    }
-})();
 
 class AuthService {
     private static instance: AuthService;
@@ -114,7 +106,7 @@ class AuthService {
         } catch (error) {
             // We use console.log here instead of error because this is an expected 
             // part of the Unified Login flow (checking if user exists)
-            console.log('AuthService: signIn attempt finished:', (error as any).message);
+            if (__DEV__) console.log('AuthService: signIn attempt finished:', (error as any).message);
             throw error;
         }
     }
@@ -126,19 +118,32 @@ class AuthService {
         try {
             const { error } = await supabase.auth.signOut();
             if (error) {
-                console.log('AuthService: signOut had error (session may already be invalid):', error.message);
+                if (__DEV__) console.log('AuthService: signOut had error (session may already be invalid):', error.message);
             }
         } catch (error) {
-            console.log('AuthService: signOut error (non-critical):', error);
+            if (__DEV__) console.log('AuthService: signOut error (non-critical):', error);
         }
     }
 
     /**
-     * Returns the currently logged in user
+     * Returns the currently logged in user.
+     * Returns null (instead of throwing) when the session/token is stale.
      */
     public async getCurrentUser(): Promise<User | null> {
-        const { data: { user } } = await supabase.auth.getUser();
-        return user;
+        try {
+            const { data: { user }, error } = await supabase.auth.getUser();
+            if (error) {
+                if (__DEV__) console.log('[AuthService] getCurrentUser error:', error.message);
+                // Stale token — clear it so next startup is clean
+                await supabase.auth.signOut().catch(() => {});
+                return null;
+            }
+            return user;
+        } catch (e: any) {
+            if (__DEV__) console.log('[AuthService] getCurrentUser threw:', e?.message || e);
+            await supabase.auth.signOut().catch(() => {});
+            return null;
+        }
     }
 
     /**

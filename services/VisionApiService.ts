@@ -16,12 +16,12 @@ class VisionApiService {
   private readonly API_URL = 'https://vision.googleapis.com/v1/images:annotate';
 
   constructor() {
-    console.log('Google Vision API service initialized');
+    if (__DEV__) console.log('Google Vision API service initialized');
   }
 
   // Google Vision API OCR
   private async performGoogleVisionOCR(imageUri: string): Promise<OCRResult> {
-    console.log('🔍 Performing Google Vision API OCR...');
+    if (__DEV__) console.log('🔍 Performing Google Vision API OCR...');
 
     try {
       // Read image as base64
@@ -29,7 +29,7 @@ class VisionApiService {
         encoding: 'base64',
       });
 
-      console.log('📸 Image encoded to base64, length:', base64.length);
+      if (__DEV__) console.log('📸 Image encoded to base64, length:', base64.length);
 
       // Get API key from environment
       const apiKey = process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON;
@@ -61,7 +61,7 @@ class VisionApiService {
         }
       }
 
-      console.log('🔑 Using Vision API key:', visionApiKey.substring(0, 10) + '...');
+      if (__DEV__) console.log('🔑 Vision API key loaded');
 
       // Prepare the request payload
       const requestPayload = {
@@ -80,8 +80,8 @@ class VisionApiService {
         ]
       };
 
-      console.log('📤 Sending request to Google Vision API...');
-      console.log('🔗 API URL:', `${this.API_URL}?key=${visionApiKey.substring(0, 10)}...`);
+      if (__DEV__) console.log('📤 Sending request to Google Vision API...');
+      if (__DEV__) console.log('🔗 Sending request to Vision API endpoint');
 
       // Make the API request
       const response = await fetch(`${this.API_URL}?key=${visionApiKey}`, {
@@ -99,7 +99,7 @@ class VisionApiService {
       }
 
       const data = await response.json();
-      console.log('✅ Google Vision API response received');
+      if (__DEV__) console.log('✅ Google Vision API response received');
 
       // Process the response
       return this.processVisionResponse(data);
@@ -108,7 +108,7 @@ class VisionApiService {
       console.error('❌ Google Vision OCR error:', error);
 
       // Fallback to mock data if OCR fails
-      console.log('🔄 Falling back to mock OCR data...');
+      if (__DEV__) console.log('🔄 Falling back to mock OCR data...');
       return {
         fullText: "MILK Rs 85.00 1L",
         blocks: [
@@ -159,7 +159,7 @@ class VisionApiService {
         };
       });
 
-      console.log(`✅ Processed ${blocks.length} text blocks from Google Vision API`);
+      if (__DEV__) console.log(`✅ Processed ${blocks.length} text blocks from Google Vision API`);
 
       return {
         fullText: fullText.trim(),
@@ -174,8 +174,8 @@ class VisionApiService {
 
   async extractTextFromImage(imageUri: string): Promise<OCRResult | null> {
     try {
-      console.log('🚀 Starting Google Vision API OCR processing...');
-      console.log('✅ Using Google Vision API for accurate OCR');
+      if (__DEV__) console.log('🚀 Starting Google Vision API OCR processing...');
+      if (__DEV__) console.log('✅ Using Google Vision API for accurate OCR');
 
       return await this.performGoogleVisionOCR(imageUri);
 
@@ -187,17 +187,17 @@ class VisionApiService {
 
   async testConnection(): Promise<boolean> {
     try {
-      console.log('🧪 Testing Google Vision API connection...');
+      if (__DEV__) console.log('🧪 Testing Google Vision API connection...');
 
       const credentialsJson = process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON;
       const visionApiKey = process.env.EXPO_PUBLIC_GOOGLE_VISION_API_KEY;
 
-      console.log('🔍 Checking environment variables...');
-      console.log('📄 Credentials JSON exists:', !!credentialsJson);
-      console.log('🔑 Vision API key exists:', !!visionApiKey);
+      if (__DEV__) console.log('🔍 Checking environment variables...');
+      if (__DEV__) console.log('📄 Credentials JSON exists:', !!credentialsJson);
+      if (__DEV__) console.log('🔑 Vision API key exists:', !!visionApiKey);
 
       if (visionApiKey) {
-        console.log('🔑 Vision API key starts with:', visionApiKey.substring(0, 10) + '...');
+        if (__DEV__) console.log('🔑 Vision API key is set');
       }
 
       if (!credentialsJson) {
@@ -218,14 +218,14 @@ class VisionApiService {
 
           if (!finalApiKey) {
             console.error('❌ Google Vision API key not found. Please set EXPO_PUBLIC_GOOGLE_VISION_API_KEY in your .env file');
-            console.log('💡 Note: Your Google Application Credentials JSON contains service account details, not an API key');
-            console.log('💡 You need to create a separate Google Vision API key for web applications');
+            if (__DEV__) console.log('💡 Note: Your Google Application Credentials JSON contains service account details, not an API key');
+            if (__DEV__) console.log('💡 You need to create a separate Google Vision API key for web applications');
             return false;
           }
         }
 
-        console.log('✅ Google Vision API key found and valid');
-        console.log('🔧 Google Vision API is ready to use');
+        if (__DEV__) console.log('✅ Google Vision API key found and valid');
+        if (__DEV__) console.log('🔧 Google Vision API is ready to use');
 
         // Test the API key with a simple request
         try {
@@ -236,10 +236,10 @@ class VisionApiService {
           });
 
           if (testResponse.status === 400) {
-            console.log('✅ API key is valid (got expected 400 for empty request)');
+            if (__DEV__) console.log('✅ API key is valid (got expected 400 for empty request)');
             return true;
           } else if (testResponse.status === 200) {
-            console.log('✅ API key is valid');
+            if (__DEV__) console.log('✅ API key is valid');
             return true;
           } else {
             console.error('❌ API key validation failed with status:', testResponse.status);

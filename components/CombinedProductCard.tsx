@@ -1,7 +1,7 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import {
   Animated,
   ColorSchemeName,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { findPromotionForProduct } from '../constants/mainProductList';
 import { useAppData } from '../contexts/AppDataContext';
+import { useOnboarding } from '../contexts/OnboardingContext';
 import { useSavedItems } from '../contexts/SavedItemsContext';
 import { Product, Promotion } from '../types';
 
@@ -36,6 +37,7 @@ interface CombinedProductCardProps {
   colors: any;
   colorScheme: ColorSchemeName;
   promotions?: Promotion[];
+  isFirstCard?: boolean;
 }
 
 // Skeleton placeholder component
@@ -53,8 +55,25 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
   colors,
   colorScheme,
   promotions = [],
+  isFirstCard = false,
 }) => {
   const { name, brand, size, products, primaryImageProductId, primaryProduct } = combinedProduct;
+  const { registerTarget } = useOnboarding();
+  const cardRef = useRef<View>(null);
+  const bookmarkRef = useRef<View>(null);
+
+  const handleCardLayout = useCallback(() => {
+    if (!isFirstCard) return;
+    cardRef.current?.measureInWindow((x, y, w, h) => {
+      if (w > 0 && h > 0) registerTarget('firstProductCard', { x, y, width: w, height: h });
+    });
+    // Small delay to ensure bookmark is also laid out
+    setTimeout(() => {
+      bookmarkRef.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0 && h > 0) registerTarget('firstBookmarkButton', { x, y, width: w, height: h });
+      });
+    }, 100);
+  }, [isFirstCard, registerTarget]);
 
   // Calculate dynamic height for iOS based on number of products
   const getCardHeight = () => {
@@ -160,6 +179,8 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
 
   return (
     <TouchableOpacity
+      ref={isFirstCard ? cardRef : undefined}
+      onLayout={isFirstCard ? handleCardLayout : undefined}
       style={[
         styles.card,
         { backgroundColor: colors.card },
@@ -170,6 +191,7 @@ const CombinedProductCard: React.FC<CombinedProductCardProps> = ({
     >
       {/* Bookmark Icon */}
       <TouchableOpacity
+        ref={isFirstCard ? bookmarkRef : undefined}
         style={styles.bookmarkButton}
         onPress={handleBookmarkPress}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

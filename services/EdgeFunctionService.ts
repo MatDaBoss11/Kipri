@@ -52,7 +52,7 @@ class EdgeFunctionService {
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     };
 
-    console.log('EdgeFunctionService initialized');
+    if (__DEV__) console.log('EdgeFunctionService initialized');
   }
 
   /**
@@ -61,14 +61,14 @@ class EdgeFunctionService {
    */
   async processImage(imageUri: string): Promise<ProcessImageResponse> {
     try {
-      console.log('Processing image via Edge Function...');
+      if (__DEV__) console.log('Processing image via Edge Function...');
 
       // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: 'base64',
       });
 
-      console.log('Image encoded, length:', base64.length);
+      if (__DEV__) console.log('Image encoded, length:', base64.length);
 
       // Determine image type
       const imageType = imageUri.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
@@ -93,7 +93,7 @@ class EdgeFunctionService {
       }
 
       const result = await response.json();
-      console.log('Edge Function response:', result);
+      if (__DEV__) console.log('Edge Function response:', result);
 
       return result;
 
@@ -229,13 +229,13 @@ class EdgeFunctionService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      console.log('Testing Edge Function connection...');
+      if (__DEV__) console.log('Testing Edge Function connection...');
 
       // Simple test - categorize a known product
       const result = await this.categorizeText('milk');
 
       if (result.category && result.confidence > 0) {
-        console.log('Edge Function connection OK');
+        if (__DEV__) console.log('Edge Function connection OK');
         return true;
       }
 

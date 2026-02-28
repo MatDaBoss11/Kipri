@@ -35,7 +35,7 @@ class BackendReplicaService {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
     };
-    console.log('Backend Replica Service - Using secure Edge Functions');
+    if (__DEV__) console.log('Backend Replica Service - Using secure Edge Functions');
   }
 
   /**
@@ -43,14 +43,14 @@ class BackendReplicaService {
    */
   async processImage(imageUri: string): Promise<ProcessImageResponse> {
     try {
-      console.log('Processing image via secure Edge Function...');
+      if (__DEV__) console.log('Processing image via secure Edge Function...');
 
       // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: 'base64',
       });
 
-      console.log('Image encoded, length:', base64.length);
+      if (__DEV__) console.log('Image encoded, length:', base64.length);
 
       // Determine image type
       const imageType = imageUri.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
@@ -75,7 +75,7 @@ class BackendReplicaService {
       }
 
       const result = await response.json();
-      console.log('Edge Function response:', result);
+      if (__DEV__) console.log('Edge Function response:', result);
 
       return result;
 
@@ -93,14 +93,14 @@ class BackendReplicaService {
    */
   async processReceipt(imageUri: string): Promise<ProcessReceiptResponse> {
     try {
-      console.log('Processing receipt via secure Edge Function...');
+      if (__DEV__) console.log('Processing receipt via secure Edge Function...');
 
       // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: 'base64',
       });
 
-      console.log('Receipt image encoded, length:', base64.length);
+      if (__DEV__) console.log('Receipt image encoded, length:', base64.length);
 
       // Determine image type
       const imageType = imageUri.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
@@ -125,7 +125,7 @@ class BackendReplicaService {
       }
 
       const result = await response.json();
-      console.log('Receipt Edge Function response:', result);
+      if (__DEV__) console.log('Receipt Edge Function response:', result);
 
       return result;
 
@@ -143,7 +143,7 @@ class BackendReplicaService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      console.log('Testing Edge Function connection...');
+      if (__DEV__) console.log('Testing Edge Function connection...');
 
       // Simple health check - try to call the function with minimal data
       const response = await fetch(`${this.baseUrl}/categorize-products`, {
@@ -156,7 +156,7 @@ class BackendReplicaService {
       });
 
       if (response.ok) {
-        console.log('Edge Function connection OK');
+        if (__DEV__) console.log('Edge Function connection OK');
         return true;
       }
 

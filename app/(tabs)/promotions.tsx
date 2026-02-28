@@ -283,6 +283,7 @@ const PromotionsScreen = () => {
                 ]}
               >
                 <TouchableOpacity
+                  ph-label="Store Card"
                   onPress={() => selectStore(store.name)}
                   activeOpacity={0.7}
                   style={[
@@ -331,6 +332,7 @@ const PromotionsScreen = () => {
       <BlurView style={styles.header} tint={colorScheme || 'default'} intensity={80}>
         <View style={styles.headerContent}>
           <TouchableOpacity
+            ph-label="Back to Store Selection"
             style={styles.backButton}
             onPress={showStoreSelectionScreen}
           >
@@ -357,6 +359,7 @@ const PromotionsScreen = () => {
       >
         {categories.map((category) => (
           <Pressable
+            ph-label="Category Filter"
             key={category}
             onPress={() => setSelectedCategory(category)}
             android_ripple={null}

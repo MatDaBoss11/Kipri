@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { usePostHog } from 'posthog-react-native';
 import { CombinedProduct } from '../components/CombinedProductCard';
 import { findPromotionForProduct } from '../constants/mainProductList';
 import ShoppingListService from '../services/ShoppingListService';
@@ -21,6 +22,7 @@ const SavedItemsContext = createContext<SavedItemsContextType | undefined>(undef
 export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const posthog = usePostHog();
 
   const shoppingListService = ShoppingListService.getInstance();
 
@@ -104,13 +106,14 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
 
       await shoppingListService.saveItem(savedItem);
+      posthog.capture('item_saved_to_list', { product: combinedProduct.name, store, price: lowestPrice });
       const items = shoppingListService.getCachedItems();
       setSavedItems([...items]);
     } catch (error) {
       console.error('Error saving lowest price product:', error);
       throw error;
     }
-  }, []);
+  }, [posthog]);
 
   const saveSpecificProduct = useCallback(async (product: Product | Promotion, promotions: Promotion[]) => {
     try {
@@ -130,24 +133,26 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
 
       await shoppingListService.saveItem(savedItem);
+      posthog.capture('item_saved_to_list', { product: productName, store, price: effectivePrice });
       const items = shoppingListService.getCachedItems();
       setSavedItems([...items]);
     } catch (error) {
       console.error('Error saving specific product:', error);
       throw error;
     }
-  }, []);
+  }, [posthog]);
 
   const removeItem = useCallback(async (itemId: string) => {
     try {
       await shoppingListService.removeItem(itemId);
+      posthog.capture('item_removed_from_list', { item_id: itemId });
       const items = shoppingListService.getCachedItems();
       setSavedItems([...items]);
     } catch (error) {
       console.error('Error removing item:', error);
       throw error;
     }
-  }, []);
+  }, [posthog]);
 
   const isProductSaved = useCallback((productId: string, store: string): boolean => {
     return shoppingListService.isItemSaved(productId, store);
@@ -156,12 +161,13 @@ export const SavedItemsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const clearAll = useCallback(async () => {
     try {
       await shoppingListService.clearAll();
+      posthog.capture('shopping_list_cleared');
       setSavedItems([]);
     } catch (error) {
       console.error('Error clearing all items:', error);
       throw error;
     }
-  }, []);
+  }, [posthog]);
 
   const refreshItems = useCallback(async () => {
     await loadItems();

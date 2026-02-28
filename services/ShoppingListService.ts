@@ -41,7 +41,7 @@ class ShoppingListService {
         this.items = [];
       }
       this.isLoaded = true;
-      console.log('Local shopping list loaded:', this.items.length, 'items');
+      if (__DEV__) console.log('Local shopping list loaded:', this.items.length, 'items');
       this.notifyListeners();
 
       // 2. If user is logged in, sync from Supabase
@@ -81,7 +81,7 @@ class ShoppingListService {
         // Simple overwrite policy: Cloud is the source of truth if we are logged in
         this.items = cloudItems;
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.items));
-        console.log('Synced down from cloud:', this.items.length, 'items');
+        if (__DEV__) console.log('Synced down from cloud:', this.items.length, 'items');
         this.notifyListeners();
       }
     } catch (error) {
@@ -108,7 +108,7 @@ class ShoppingListService {
       if (error) {
         console.error('Error syncing up to cloud:', error);
       } else {
-        console.log('Successfully synced up to cloud');
+        if (__DEV__) console.log('Successfully synced up to cloud');
       }
     } catch (error) {
       console.error('Sync up failed:', error);
@@ -127,7 +127,7 @@ class ShoppingListService {
         this.items.push(item);
       }
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.items));
-      console.log('Item saved to local shopping list:', item.productName);
+      if (__DEV__) console.log('Item saved to local shopping list:', item.productName);
       this.notifyListeners();
 
       // Sync to cloud if possible
@@ -142,7 +142,7 @@ class ShoppingListService {
     try {
       this.items = this.items.filter(item => item.id !== itemId);
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.items));
-      console.log('Item removed from local list:', itemId);
+      if (__DEV__) console.log('Item removed from local list:', itemId);
       this.notifyListeners();
 
       // Sync to cloud
@@ -157,7 +157,7 @@ class ShoppingListService {
     try {
       this.items = [];
       await AsyncStorage.removeItem(STORAGE_KEY);
-      console.log('Local shopping list cleared');
+      if (__DEV__) console.log('Local shopping list cleared');
       this.notifyListeners();
 
       // Sync to cloud

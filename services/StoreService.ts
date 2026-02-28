@@ -15,7 +15,7 @@ class StoreService {
 
   public async getAllStores(): Promise<Store[]> {
     try {
-      console.log('🏪 Fetching all active stores from database...');
+      if (__DEV__) console.log('🏪 Fetching all active stores from database...');
 
       const { data, error } = await supabase
         .from('stores')
@@ -27,7 +27,7 @@ class StoreService {
       if (error) throw error;
 
       const stores = data || [];
-      console.log('✅ Stores fetched successfully', stores.length, 'active stores');
+      if (__DEV__) console.log('✅ Stores fetched successfully', stores.length, 'active stores');
       return stores;
     } catch (error) {
       console.error('❌ Error fetching stores:', error);
@@ -37,7 +37,7 @@ class StoreService {
 
   public async getStoresByChain(): Promise<{ [chain: string]: Store[] }> {
     try {
-      console.log('🔄 Grouping stores by chain...');
+      if (__DEV__) console.log('🔄 Grouping stores by chain...');
 
       const allStores = await this.getAllStores();
       const storesByChain: { [chain: string]: Store[] } = {};
@@ -50,7 +50,7 @@ class StoreService {
         storesByChain[chain].push(store);
       }
 
-      console.log('✅ Stores grouped by chain successfully', Object.keys(storesByChain).length, 'chains');
+      if (__DEV__) console.log('✅ Stores grouped by chain successfully', Object.keys(storesByChain).length, 'chains');
       return storesByChain;
     } catch (error) {
       console.error('❌ Error grouping stores by chain:', error);
@@ -60,7 +60,7 @@ class StoreService {
 
   public async getUserStorePreferences(userId: string): Promise<Store[]> {
     try {
-      console.log('👤 Fetching user store preferences for user:', userId);
+      if (__DEV__) console.log('👤 Fetching user store preferences for user:', userId);
 
       // First, get the store IDs from preferences
       const { data: prefsData, error: prefsError } = await supabase
@@ -74,10 +74,10 @@ class StoreService {
         throw prefsError;
       }
 
-      console.log('📋 Found preferences:', prefsData?.length || 0);
+      if (__DEV__) console.log('📋 Found preferences:', prefsData?.length || 0);
 
       if (!prefsData || prefsData.length === 0) {
-        console.log('✅ User store preferences fetched successfully 0 stores');
+        if (__DEV__) console.log('✅ User store preferences fetched successfully 0 stores');
         return [];
       }
 
@@ -99,7 +99,7 @@ class StoreService {
         .map(p => storeMap.get(p.store_id))
         .filter((s): s is Store => s !== undefined);
 
-      console.log('✅ User store preferences fetched successfully', stores.length, 'stores');
+      if (__DEV__) console.log('✅ User store preferences fetched successfully', stores.length, 'stores');
       return stores;
     } catch (error) {
       console.error('❌ Error fetching user store preferences:', error);
@@ -109,7 +109,7 @@ class StoreService {
 
   public async saveUserStorePreferences(userId: string, storeIds: string[]): Promise<boolean> {
     try {
-      console.log('💾 Saving user store preferences for user:', userId, 'with stores:', storeIds);
+      if (__DEV__) console.log('💾 Saving user store preferences for user:', userId, 'with stores:', storeIds);
 
       if (storeIds.length !== 3) {
         console.error('❌ Error: Must provide exactly 3 store IDs, got', storeIds.length);
@@ -117,7 +117,7 @@ class StoreService {
       }
 
       // First, delete all existing preferences for this user
-      console.log('🗑️ Deleting existing preferences...');
+      if (__DEV__) console.log('🗑️ Deleting existing preferences...');
       const { error: deleteError } = await supabase
         .from('user_store_preferences')
         .delete()
@@ -126,7 +126,7 @@ class StoreService {
       if (deleteError) throw deleteError;
 
       // Then, insert the new preferences with priorities 1, 2, 3
-      console.log('➕ Inserting new preferences...');
+      if (__DEV__) console.log('➕ Inserting new preferences...');
       const newPreferences = storeIds.map((storeId, index) => ({
         user_id: userId,
         store_id: storeId,
@@ -139,7 +139,7 @@ class StoreService {
 
       if (insertError) throw insertError;
 
-      console.log('✅ User store preferences saved successfully');
+      if (__DEV__) console.log('✅ User store preferences saved successfully');
       return true;
     } catch (error) {
       console.error('❌ Error saving user store preferences:', error);
@@ -149,7 +149,7 @@ class StoreService {
 
   public async hasUserSelectedStores(userId: string): Promise<boolean> {
     try {
-      console.log('🔍 Checking if user has selected stores:', userId);
+      if (__DEV__) console.log('🔍 Checking if user has selected stores:', userId);
 
       const { data, error } = await supabase
         .from('user_store_preferences')
@@ -160,7 +160,7 @@ class StoreService {
       if (error) throw error;
 
       const hasPreferences = data && data.length > 0;
-      console.log('✅ User preference check complete:', hasPreferences ? 'Has preferences' : 'No preferences');
+      if (__DEV__) console.log('✅ User preference check complete:', hasPreferences ? 'Has preferences' : 'No preferences');
       return hasPreferences;
     } catch (error) {
       console.error('❌ Error checking user store preferences:', error);

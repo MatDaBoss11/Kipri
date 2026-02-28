@@ -72,12 +72,12 @@ class DataCacheService {
 
   public async getProducts(forceRefresh = false): Promise<Product[]> {
     if (!forceRefresh && this.isProductsCacheValid && this.products) {
-      console.log('📦 Using cached products', this.products.length, 'items');
+      if (__DEV__) console.log('📦 Using cached products', this.products.length, 'items');
       return this.products;
     }
 
     try {
-      console.log('🔄 Fetching products from database...');
+      if (__DEV__) console.log('🔄 Fetching products from database...');
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -91,14 +91,14 @@ class DataCacheService {
 
       // Auto-detect database reset: if database is empty but we have cached images, clear everything
       if (this.products.length === 0 && Object.keys(this.imageUrls).length > 0) {
-        console.log('🔍 Database appears to be reset (0 products but cached images exist)');
+        if (__DEV__) console.log('🔍 Database appears to be reset (0 products but cached images exist)');
         await this.clearAllCacheForReset();
         this.products = []; // Keep it empty after clearing cache
         this.isProductsCached = true;
         this.lastProductsUpdate = new Date();
       }
 
-      console.log('✅ Products cached successfully', this.products.length, 'items');
+      if (__DEV__) console.log('✅ Products cached successfully', this.products.length, 'items');
       return this.products;
     } catch (error) {
       console.error('❌ Error fetching products:', error);
@@ -108,12 +108,12 @@ class DataCacheService {
 
   public async getPromotions(forceRefresh = false): Promise<Promotion[]> {
     if (!forceRefresh && this.isPromotionsCacheValid && this.promotions) {
-      console.log('🎯 Using cached promotions', this.promotions.length, 'items');
+      if (__DEV__) console.log('🎯 Using cached promotions', this.promotions.length, 'items');
       return this.promotions;
     }
 
     try {
-      console.log('🔄 Fetching promotions from database...');
+      if (__DEV__) console.log('🔄 Fetching promotions from database...');
 
       const { data, error } = await supabase
         .from('promotions')
@@ -149,7 +149,7 @@ class DataCacheService {
       this.isPromotionsCached = true;
       this.lastPromotionsUpdate = new Date();
 
-      console.log('✅ Promotions cached successfully', this.promotions.length, 'items');
+      if (__DEV__) console.log('✅ Promotions cached successfully', this.promotions.length, 'items');
       return this.promotions;
     } catch (error) {
       console.error('❌ Error fetching promotions:', error);
@@ -161,12 +161,12 @@ class DataCacheService {
     // Convert productId to string if it's a number
     const productIdStr = String(productId);
 
-    console.log('🔄 Attempting to get image URL for productId:', productIdStr);
+    if (__DEV__) console.log('🔄 Attempting to get image URL for productId:', productIdStr);
 
     const cacheKey = productIdStr;
 
     if (!forceRefresh && this.imageUrls[cacheKey]) {
-      console.log('🖼️ Using cached image URL for product', productIdStr);
+      if (__DEV__) console.log('🖼️ Using cached image URL for product', productIdStr);
       return this.imageUrls[cacheKey];
     }
 
@@ -194,7 +194,7 @@ class DataCacheService {
   }
 
   public async invalidateCache(): Promise<void> {
-    console.log('🗑️ Invalidating all cache data...');
+    if (__DEV__) console.log('🗑️ Invalidating all cache data...');
     this.products = null;
     this.promotions = null;
     this.imageUrls = {};
@@ -202,38 +202,38 @@ class DataCacheService {
     this.isPromotionsCached = false;
     this.lastProductsUpdate = null;
     this.lastPromotionsUpdate = null;
-    console.log('✅ All cache data cleared successfully');
+    if (__DEV__) console.log('✅ All cache data cleared successfully');
   }
 
   public async invalidateProducts(): Promise<void> {
-    console.log('🗑️ Invalidating products cache...');
+    if (__DEV__) console.log('🗑️ Invalidating products cache...');
     this.products = null;
     this.isProductsCached = false;
     this.lastProductsUpdate = null;
     // Also clear image cache when products are invalidated
     this.imageUrls = {};
-    console.log('✅ Products cache and image cache cleared successfully');
+    if (__DEV__) console.log('✅ Products cache and image cache cleared successfully');
   }
 
   public async invalidatePromotions(): Promise<void> {
-    console.log('🗑️ Invalidating promotions cache...');
+    if (__DEV__) console.log('🗑️ Invalidating promotions cache...');
     this.promotions = null;
     this.isPromotionsCached = false;
     this.lastPromotionsUpdate = null;
-    console.log('✅ Promotions cache cleared successfully');
+    if (__DEV__) console.log('✅ Promotions cache cleared successfully');
   }
 
   public async invalidateImageCache(): Promise<void> {
-    console.log('🗑️ Clearing image URL cache...');
+    if (__DEV__) console.log('🗑️ Clearing image URL cache...');
     const imageCount = Object.keys(this.imageUrls).length;
     this.imageUrls = {};
-    console.log(`✅ Image cache cleared successfully (removed ${imageCount} cached URLs)`);
+    if (__DEV__) console.log(`✅ Image cache cleared successfully (removed ${imageCount} cached URLs)`);
   }
 
   public async clearAllCacheForReset(): Promise<void> {
-    console.log('🔄 Database reset detected - clearing all cache...');
+    if (__DEV__) console.log('🔄 Database reset detected - clearing all cache...');
     await this.invalidateCache();
-    console.log('✅ All cache cleared for database reset');
+    if (__DEV__) console.log('✅ All cache cleared for database reset');
   }
 
   /**
@@ -242,9 +242,9 @@ class DataCacheService {
    * Usage: window.clearKipriCache()
    */
   public async developerClearCache(): Promise<void> {
-    console.log('🛠️ Developer command: Clearing all cache...');
+    if (__DEV__) console.log('🛠️ Developer command: Clearing all cache...');
     await this.invalidateCache();
-    console.log('✅ Developer cache clear completed successfully');
+    if (__DEV__) console.log('✅ Developer cache clear completed successfully');
   }
 
   /**
@@ -252,12 +252,12 @@ class DataCacheService {
    * This method forces a refresh to ensure fresh data on app startup
    */
   public async preloadAllData(): Promise<{ products: Product[]; promotions: Promotion[] }> {
-    console.log('🚀 Preloading all data...');
+    if (__DEV__) console.log('🚀 Preloading all data...');
     const [products, promotions] = await Promise.all([
       this.getProducts(true),
       this.getPromotions(true)
     ]);
-    console.log(`✅ Preloaded ${products.length} products and ${promotions.length} promotions`);
+    if (__DEV__) console.log(`✅ Preloaded ${products.length} products and ${promotions.length} promotions`);
     return { products, promotions };
   }
 
@@ -267,7 +267,7 @@ class DataCacheService {
    * @param storeNames Array of store names to filter by
    */
   public async preloadDataForStores(storeNames: string[]): Promise<{ products: Product[]; promotions: Promotion[] }> {
-    console.log('🚀 Preloading data for stores:', storeNames);
+    if (__DEV__) console.log('🚀 Preloading data for stores:', storeNames);
 
     try {
       // Fetch products filtered by store names
@@ -321,7 +321,7 @@ class DataCacheService {
       this.lastProductsUpdate = new Date();
       this.lastPromotionsUpdate = new Date();
 
-      console.log(`✅ Preloaded ${products.length} products and ${allPromotions.length} promotions from ${storeNames.length} stores`);
+      if (__DEV__) console.log(`✅ Preloaded ${products.length} products and ${allPromotions.length} promotions from ${storeNames.length} stores`);
       return { products, promotions: allPromotions };
     } catch (error) {
       console.error('❌ Error preloading data for stores:', error);
@@ -335,7 +335,7 @@ class DataCacheService {
    * @returns Object mapping product IDs to their image URLs
    */
   public async preloadAllImageUrls(productImageInfo: { id: string; images?: string }[]): Promise<{ [key: string]: string | null }> {
-    console.log(`🖼️ Preloading ${productImageInfo.length} image URLs...`);
+    if (__DEV__) console.log(`🖼️ Preloading ${productImageInfo.length} image URLs...`);
     const imageUrls: { [key: string]: string | null } = {};
     const batchSize = 10;
 
@@ -351,10 +351,10 @@ class DataCacheService {
 
       // Log progress for debugging
       const progress = Math.min(i + batchSize, productImageInfo.length);
-      console.log(`📸 Image URL progress: ${progress}/${productImageInfo.length}`);
+      if (__DEV__) console.log(`📸 Image URL progress: ${progress}/${productImageInfo.length}`);
     }
 
-    console.log(`✅ Preloaded ${Object.keys(imageUrls).length} image URLs`);
+    if (__DEV__) console.log(`✅ Preloaded ${Object.keys(imageUrls).length} image URLs`);
     return imageUrls;
   }
 }

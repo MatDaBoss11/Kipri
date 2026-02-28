@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Image, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
+import { PostHogProvider, usePostHog } from 'posthog-react-native';
 
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
@@ -17,6 +18,8 @@ import { AppDataProvider } from '../contexts/AppDataContext';
 import { InitialCategoryProvider, useInitialCategory } from '../contexts/InitialCategoryContext';
 import { SavedItemsProvider } from '../contexts/SavedItemsContext';
 import { StorePreferencesProvider, useStorePreferences } from '../contexts/StorePreferencesContext';
+import { ActiveStoreProvider } from '../contexts/ActiveStoreContext';
+import { OnboardingProvider } from '../contexts/OnboardingContext';
 import { LogoutProvider } from '../contexts/LogoutContext';
 import AuthService from '../services/AuthService';
 import DataCacheService from '../services/DataCacheService';
@@ -297,8 +300,9 @@ function AppContent({
   );
 }
 
-export default function RootLayout() {
+function RootLayoutContent() {
   const colorScheme = useColorScheme();
+  const posthog = usePostHog();
   const [appIsReady, setAppIsReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [sessionKey, setSessionKey] = useState(0);
@@ -314,9 +318,10 @@ export default function RootLayout() {
         const user = await AuthService.getCurrentUser();
         setIsAuthenticated(!!user);
 
-        // If authenticated, pre-load their cloud wishlist
+        // If authenticated, pre-load their cloud wishlist and identify in PostHog
         if (user) {
           console.log('[RootLayout] User authenticated, syncing wishlist...');
+          posthog.identify(user.id, { email: user.email ?? '' });
           await ShoppingListService.getInstance().loadItems();
         }
       } catch (e: any) {
@@ -353,26 +358,36 @@ export default function RootLayout() {
       '@kipri_user_language',
       'selected_store',
       'is_on_main_menu',
+      '@kipri_onboarding_completed',
+      '@kipri_scanner_tips_seen',
     ]);
 
     // 4. Sign out from Supabase
     await AuthService.signOut();
 
+    // 5. Reset PostHog identity (anonymous from now on)
+    posthog.reset();
+
     console.log('[RootLayout] All local data cleared, signed out');
 
-    // 5. Bump session key — forces full remount of all providers/contexts
+    // 6. Bump session key — forces full remount of all providers/contexts
     setSessionKey(prev => prev + 1);
 
-    // 6. Flip auth state — shows login screen
+    // 7. Flip auth state — shows login screen
     setIsAuthenticated(false);
-  }, []);
+  }, [posthog]);
 
   // Handle successful authentication
   const handleAuthSuccess = useCallback(async () => {
     setIsAuthenticated(true);
+    // Identify the new user in PostHog
+    const user = await AuthService.getCurrentUser();
+    if (user) {
+      posthog.identify(user.id, { email: user.email ?? '' });
+    }
     // Refresh items to pull from cloud
     await ShoppingListService.getInstance().loadItems();
-  }, []);
+  }, [posthog]);
 
   // Prepare app resources (fonts only - data is loaded by AppDataProvider)
   useEffect(() => {
@@ -430,17 +445,67 @@ export default function RootLayout() {
         <InitialCategoryProvider key={`session-${sessionKey}`}>
           <SavedItemsProvider>
             <StorePreferencesProvider>
-              <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
-                <AppContent
-                  colorScheme={colorScheme}
-                  isAuthenticated={isAuthenticated}
-                  handleAuthSuccess={handleAuthSuccess}
-                />
-              </ThemeProvider>
+              <ActiveStoreProvider>
+                <OnboardingProvider>
+                  <ThemeProvider value={colorScheme === 'dark' ? KipriDarkTheme : KipriLightTheme}>
+                    <AppContent
+                      colorScheme={colorScheme}
+                      isAuthenticated={isAuthenticated}
+                      handleAuthSuccess={handleAuthSuccess}
+                    />
+                  </ThemeProvider>
+                </OnboardingProvider>
+              </ActiveStoreProvider>
             </StorePreferencesProvider>
           </SavedItemsProvider>
         </InitialCategoryProvider>
       </LogoutProvider>
     </View>
+  );
+}
+
+const POSTHOG_API_KEY = process.env.EXPO_PUBLIC_POSTHOG_API_KEY || '';
+const POSTHOG_HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST || 'https://eu.i.posthog.com';
+
+function PostHogDebugger() {
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    if (posthog) {
+      console.log('[PostHog] SDK ready, sending test event...');
+      posthog.capture('app_launched');
+      posthog.flush();
+      console.log('[PostHog] Test event sent and flushed!');
+    } else {
+      console.log('[PostHog] SDK NOT ready!');
+    }
+  }, [posthog]);
+
+  return null;
+}
+
+export default function RootLayout() {
+  return (
+    <PostHogProvider
+      apiKey={POSTHOG_API_KEY}
+      options={{
+        host: POSTHOG_HOST,
+        flushAt: 1,
+        flushInterval: 5000,
+        captureAppLifecycleEvents: true,
+        enableSessionReplay: true,
+        sessionReplayConfig: {
+          maskAllTextInputs: true,
+          maskAllImages: true,
+        },
+      }}
+      autocapture={{
+        captureTouches: true,
+        captureScreens: false,
+      }}
+    >
+      <PostHogDebugger />
+      <RootLayoutContent />
+    </PostHogProvider>
   );
 }

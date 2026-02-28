@@ -1,16 +1,15 @@
 import * as ImagePicker from 'expo-image-picker';
 import { ReviewedReceiptItem } from '../types';
-import GeminiApiService, { Product } from './GeminiApiService';
+import BackendReplicaService from './BackendReplicaService';
+import { Product } from './GeminiApiService';
 import ImageUploadService from './ImageUploadService';
 import OpenAiService, { FoodCategoryResult } from './OpenAiService';
 import SupabaseService from './SupabaseService';
-import VisionApiService, { OCRResult } from './VisionApiService';
 
 export interface ProcessImageResult {
   success: boolean;
   products: Product[];
   error?: string;
-  ocrResult?: OCRResult;
 }
 
 export interface ProcessTextResult {
@@ -20,16 +19,14 @@ export interface ProcessTextResult {
 }
 
 export interface ServiceStatus {
-  vision: boolean;
-  openai: boolean;
+  edgeFunctions: boolean;
   openai_categorization: boolean;
   supabase: boolean;
 }
 
 class KipriBackendService {
   private serviceStatus: ServiceStatus = {
-    vision: false,
-    openai: false,
+    edgeFunctions: false,
     openai_categorization: false,
     supabase: false,
   };
@@ -39,18 +36,15 @@ class KipriBackendService {
   }
 
   private async initializeServices() {
-    console.log('Initializing Kipri Backend Services...');
+    if (__DEV__) console.log('Initializing Kipri Backend Services...');
 
-    // Test all services
-    const openaiTest = await GeminiApiService.testConnection();
     this.serviceStatus = {
-      vision: await VisionApiService.testConnection(),
-      openai: openaiTest,
+      edgeFunctions: await BackendReplicaService.testConnection(),
       openai_categorization: await OpenAiService.testConnection(),
       supabase: await SupabaseService.testConnection(),
     };
 
-    console.log('Service Status:', this.serviceStatus);
+    if (__DEV__) console.log('Service Status:', this.serviceStatus);
   }
 
   async getServiceStatus(): Promise<ServiceStatus> {
@@ -58,103 +52,51 @@ class KipriBackendService {
   }
 
   /**
-   * Complete image processing pipeline:
-   * 1. OCR with Google Vision
-   * 2. Text filtering and structuring with Gemini
-   * 3. Optional categorization with OpenAI
-   * 4. Save to Supabase
+   * Process image via secure Edge Function (BackendReplicaService)
    */
   async processImage(imageUri: string, saveToDatabase: boolean = true): Promise<ProcessImageResult> {
     try {
-      console.log('Starting image processing pipeline...');
+      if (__DEV__) console.log('Starting image processing via Edge Function...');
 
-      // Step 1: OCR Processing
-      console.log('Step 1: Extracting text with OCR...');
-      const ocrResult = await VisionApiService.extractTextFromImage(imageUri);
-      
-      if (!ocrResult) {
+      const result = await BackendReplicaService.processImage(imageUri);
+
+      if (!result.success || !result.data) {
         return {
           success: false,
           products: [],
-          error: 'Failed to extract text from image',
+          error: result.error || 'Failed to process image',
         };
       }
 
-      console.log(`OCR extracted ${ocrResult.blocks.length} text blocks`);
+      // Convert BackendReplicaService response to Product format
+      const product: Product = {
+        product: result.data.product_name,
+        brand: result.data.brand,
+        price: result.data.price,
+        size: result.data.size,
+        store: result.data.store,
+        categories: result.data.categories,
+        imageSource: imageUri,
+      };
 
-      // Step 2: Filter and structure with OpenAI
-      console.log('Step 2: Processing text with OpenAI...');
-      const filteredText = await GeminiApiService.filterUsefulText(ocrResult.fullText);
+      const products: Product[] = [product];
 
-      if (!filteredText) {
-        return {
-          success: false,
-          products: [],
-          error: 'No useful product information found in image',
-          ocrResult,
-        };
-      }
-
-      // Step 3: Extract structured products
-      console.log('Step 3: Structuring product data...');
-      const products: Product[] = [];
-
-      // Process each text block as a potential product
-      for (const block of ocrResult.blocks) {
-        if (block.text.trim().length > 5) { // Skip very short text
-          const product = await GeminiApiService.structureProductData(block.text);
-          if (product && product.product !== 'Unknown') {
-            product.imageSource = imageUri;
-            products.push(product);
-          }
-        }
-      }
-
-      console.log(`Extracted ${products.length} products`);
-
-      // Step 4: Enhanced categorization with OpenAI (if available)
-      if (this.serviceStatus.openai_categorization && products.length > 0) {
-        console.log('Step 4: Enhancing categories with OpenAI...');
-        try {
-          const productTexts = products.map(p => {
-            const existingCategories = p.categories?.join(' ') || '';
-            return `${p.product} ${existingCategories}`.trim();
-          });
-          const categoryResults = await OpenAiService.batchCategorizeTexts(productTexts);
-
-          // Update products with OpenAI categorization
-          products.forEach((product, index) => {
-            const categoryResult = categoryResults[index];
-            if (categoryResult && categoryResult.isFood && categoryResult.confidence > 0.7) {
-              // Add the category to the categories array if not already present
-              const existingCategories = product.categories || [];
-              if (!existingCategories.includes(categoryResult.category)) {
-                product.categories = [...existingCategories, categoryResult.category];
-              }
-            }
-          });
-        } catch (error) {
-          console.warn('OpenAI categorization failed, using default categories:', error);
-        }
-      }
-
-      // Step 5: Save to Supabase (if enabled)
+      // Save to Supabase if enabled
       if (saveToDatabase && this.serviceStatus.supabase && products.length > 0) {
-        console.log('Step 5: Saving to database...');
+        if (__DEV__) console.log('Saving to database...');
         try {
           const savedProducts = await SupabaseService.saveProducts(products);
-          if (savedProducts) {
+          if (__DEV__ && savedProducts) {
             console.log(`Successfully saved ${savedProducts.length} products to database`);
           }
         } catch (error) {
-          console.warn('Failed to save to database:', error);
+          if (__DEV__) console.warn('Failed to save to database:', error);
         }
       }
 
       return {
         success: true,
         products,
-        ocrResult,
       };
 
     } catch (error) {
@@ -172,7 +114,7 @@ class KipriBackendService {
    */
   async processText(text: string): Promise<ProcessTextResult> {
     try {
-      console.log('Processing text for food categorization...');
+      if (__DEV__) console.log('Processing text for food categorization...');
 
       // Use OpenAI for detailed analysis
       if (this.serviceStatus.openai_categorization) {
@@ -212,7 +154,7 @@ class KipriBackendService {
     const results: ProcessImageResult[] = [];
     
     for (const imageUri of imageUris) {
-      console.log(`Processing image ${results.length + 1}/${imageUris.length}`);
+      if (__DEV__) console.log(`Processing image ${results.length + 1}/${imageUris.length}`);
       const result = await this.processImage(imageUri, saveToDatabase);
       results.push(result);
       
@@ -291,12 +233,12 @@ class KipriBackendService {
     // Batch INSERT new products
     if (newItems.length > 0) {
       const products: Product[] = newItems.map(item => ({
-        product: item.product_name,
-        brand: item.brand?.toUpperCase() || '',
-        price: item.price.toString(),
-        size: item.size || '',
-        store: item.store,
-        categories: item.categories.length > 0 ? item.categories : ['miscellaneous'],
+        product: (item.product_name || '').slice(0, 200).trim(),
+        brand: (item.brand?.toUpperCase() || '').slice(0, 100).trim(),
+        price: Math.max(0, parseFloat(item.price?.toString() || '0') || 0).toString(),
+        size: (item.size || '').slice(0, 50).trim(),
+        store: (item.store || '').slice(0, 100).trim(),
+        categories: item.categories.length > 0 ? item.categories.map(c => c.slice(0, 50)) : ['miscellaneous'],
       }));
 
       try {
@@ -352,7 +294,7 @@ class KipriBackendService {
 
   async saveProduct(product: Product) {
     try {
-      console.log('Saving product with image handling...');
+      if (__DEV__) console.log('Saving product with image handling...');
 
       // Extract image URI if present
       const imageUri = product.imageSource || product.images;
@@ -370,26 +312,26 @@ class KipriBackendService {
         return null;
       }
 
-      console.log('Product saved successfully, ID:', savedProduct.id);
+      if (__DEV__) console.log('Product saved successfully, ID:', savedProduct.id);
 
       // If there's an image, upload it
       if (imageUri && savedProduct.id) {
-        console.log('Uploading product image...');
+        if (__DEV__) console.log('Uploading product image...');
         const imagePath = await ImageUploadService.uploadProductImage(imageUri, savedProduct.id.toString());
 
         if (imagePath) {
-          console.log('Image uploaded successfully, updating product...');
+          if (__DEV__) console.log('Image uploaded successfully, updating product...');
           // Update product with image path
           const updatedProduct = await SupabaseService.updateProduct(savedProduct.id.toString(), {
             images: imagePath
           });
 
           if (updatedProduct) {
-            console.log('Product updated with image path');
+            if (__DEV__) console.log('Product updated with image path');
             return updatedProduct;
           }
         } else {
-          console.warn('Image upload failed, but product was saved');
+          if (__DEV__) console.warn('Image upload failed, but product was saved');
         }
       }
 
@@ -403,7 +345,7 @@ class KipriBackendService {
 
   async updateProduct(id: string, updates: Partial<Product>) {
     try {
-      console.log('Updating product with image handling...');
+      if (__DEV__) console.log('Updating product with image handling...');
 
       // Extract image URI if present
       const imageUri = updates.imageSource || updates.images;
@@ -415,14 +357,14 @@ class KipriBackendService {
 
       // If there's an image to upload
       if (imageUri) {
-        console.log('Uploading updated product image...');
+        if (__DEV__) console.log('Uploading updated product image...');
         const imagePath = await ImageUploadService.uploadProductImage(imageUri, id);
 
         if (imagePath) {
-          console.log('Image uploaded successfully, adding to updates...');
+          if (__DEV__) console.log('Image uploaded successfully, adding to updates...');
           updatesToSave.images = imagePath;
         } else {
-          console.warn('Image upload failed, proceeding without image update');
+          if (__DEV__) console.warn('Image upload failed, proceeding without image update');
         }
       }
 
@@ -441,29 +383,27 @@ class KipriBackendService {
 
   // Utility methods
   async testAllServices(): Promise<ServiceStatus> {
-    console.log('Testing all services...');
+    if (__DEV__) console.log('Testing all services...');
 
-    const openaiTest = await GeminiApiService.testConnection();
     const status = {
-      vision: await VisionApiService.testConnection(),
-      openai: openaiTest,
+      edgeFunctions: await BackendReplicaService.testConnection(),
       openai_categorization: await OpenAiService.testConnection(),
       supabase: await SupabaseService.testConnection(),
     };
 
     this.serviceStatus = status;
-    console.log('Service test results:', status);
+    if (__DEV__) console.log('Service test results:', status);
 
     return status;
   }
 
   getRequiredApiKeys(): string[] {
     const keys = [];
-    if (!process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON || process.env.EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS_JSON.includes('your_')) {
-      keys.push('Google Cloud Service Account Credentials');
+    if (!process.env.EXPO_PUBLIC_SUPABASE_URL) {
+      keys.push('Supabase URL');
     }
-    if (!process.env.EXPO_PUBLIC_OPENAI_API_KEY || process.env.EXPO_PUBLIC_OPENAI_API_KEY.includes('your_')) {
-      keys.push('OpenAI API Key');
+    if (!process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
+      keys.push('Supabase Anon Key');
     }
     return keys;
   }

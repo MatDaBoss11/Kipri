@@ -34,8 +34,11 @@ export default {
     plugins: [
       "expo-router",
       "expo-font",
+      "expo-camera",
       "expo-image-picker",
       "expo-web-browser",
+      "expo-localization",
+      "expo-secure-store",
       [
         "expo-splash-screen",
         {
@@ -55,6 +58,8 @@ export default {
     extra: {
       supabaseUrl: process.env.SUPABASE_URL,
       supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+      posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
       eas: {
         projectId: "684c2cbf-caec-46f9-bc13-c8548fcf4679"
       }

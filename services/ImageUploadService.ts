@@ -10,8 +10,8 @@ class ImageUploadService {
    */
   async uploadProductImage(imageUri: string, productId: string): Promise<string | null> {
     try {
-      console.log('📸 Starting image upload for product:', productId);
-      console.log('📸 Image URI:', imageUri);
+      if (__DEV__) console.log('📸 Starting image upload for product:', productId);
+      if (__DEV__) console.log('📸 Image URI:', imageUri);
 
       // Validate inputs
       if (!imageUri || !productId) {
@@ -26,7 +26,22 @@ class ImageUploadService {
         return null;
       }
 
-      console.log('✅ File exists, size:', fileInfo.size, 'bytes');
+      if (__DEV__) console.log('✅ File exists, size:', fileInfo.size, 'bytes');
+
+      // Validate file size (max 20MB raw before compression)
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      if (fileInfo.size && fileInfo.size > MAX_FILE_SIZE) {
+        console.error('❌ Image file too large:', fileInfo.size, 'bytes (max 20MB)');
+        return null;
+      }
+
+      // Validate file extension
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.heic', '.webp'];
+      const ext = imageUri.split('.').pop()?.toLowerCase();
+      if (ext && !allowedExtensions.includes(`.${ext}`)) {
+        console.error('❌ Invalid file type:', ext);
+        return null;
+      }
 
       // Resize image to reduce file size if needed (max 1024x1024)
       const manipulatedImage = await manipulateAsync(
@@ -35,7 +50,7 @@ class ImageUploadService {
         { compress: 0.8, format: SaveFormat.JPEG }
       );
 
-      console.log('✅ Image processed, new URI:', manipulatedImage.uri);
+      if (__DEV__) console.log('✅ Image processed, new URI:', manipulatedImage.uri);
 
       // Read the processed image as base64
       const base64 = await FileSystem.readAsStringAsync(manipulatedImage.uri, {
@@ -47,16 +62,30 @@ class ImageUploadService {
         return null;
       }
 
-      console.log('✅ Base64 string length:', base64.length);
+      if (__DEV__) console.log('✅ Base64 string length:', base64.length);
+
+      // Validate compressed size (max 5MB after compression)
+      const MAX_COMPRESSED_SIZE = 5 * 1024 * 1024;
+      if (base64.length * 0.75 > MAX_COMPRESSED_SIZE) {
+        console.error('❌ Compressed image still too large');
+        return null;
+      }
+
+      // Sanitize productId to prevent path traversal
+      const safeProductId = productId.replace(/[^a-zA-Z0-9_-]/g, '');
+      if (!safeProductId) {
+        console.error('❌ Invalid product ID');
+        return null;
+      }
 
       // Upload to Supabase
-      const fileName = `${productId}.jpg`;
-      console.log('📤 Uploading as:', fileName);
+      const fileName = `IMG_${safeProductId}.jpg`;
+      if (__DEV__) console.log('📤 Uploading as:', fileName);
 
       // Convert base64 to ArrayBuffer for Supabase
       // Use base64-arraybuffer package which works in React Native
       const arrayBuffer = decode(base64);
-      console.log('✅ Converted to ArrayBuffer, size:', arrayBuffer.byteLength);
+      if (__DEV__) console.log('✅ Converted to ArrayBuffer, size:', arrayBuffer.byteLength);
 
       // Upload the ArrayBuffer to Supabase
       const { data, error } = await supabase.storage
@@ -70,7 +99,7 @@ class ImageUploadService {
         console.error('❌ Supabase upload error:', error);
         
         // Try alternative approach with FormData
-        console.log('🔄 Trying FormData approach...');
+        if (__DEV__) console.log('🔄 Trying FormData approach...');
         const formData = new FormData();
         const file = {
           uri: manipulatedImage.uri,
@@ -95,12 +124,12 @@ class ImageUploadService {
           return null;
         }
 
-        console.log('✅ Successfully uploaded via FormData');
-        return fileName;
+        if (__DEV__) console.log('✅ Successfully uploaded via FormData');
+        return fileName.replace('.jpg', '');
       }
 
-      console.log('✅ Successfully uploaded image:', data.path);
-      return data.path;
+      if (__DEV__) console.log('✅ Successfully uploaded image:', data.path);
+      return data.path.replace('.jpg', '');
 
     } catch (error) {
       console.error('❌ Image upload error:', error);

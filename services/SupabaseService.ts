@@ -41,7 +41,7 @@ class SupabaseService {
         return false;
       }
 
-      console.log('Supabase connection test successful');
+      if (__DEV__) console.log('Supabase connection test successful');
       return true;
 
     } catch (error) {
@@ -78,7 +78,7 @@ class SupabaseService {
         return null;
       }
 
-      console.log(`Successfully saved ${data.length} products to Supabase`);
+      if (__DEV__) console.log(`Successfully saved ${data.length} products to Supabase`);
       return data as DatabaseProduct[];
 
     } catch (error) {
@@ -115,7 +115,7 @@ class SupabaseService {
         return null;
       }
 
-      console.log('Successfully saved product to Supabase:', data.product);
+      if (__DEV__) console.log('Successfully saved product to Supabase:', data.product);
       return data as DatabaseProduct;
 
     } catch (error) {
@@ -226,7 +226,7 @@ class SupabaseService {
         return null;
       }
 
-      console.log('Successfully updated product in Supabase:', data.product);
+      if (__DEV__) console.log('Successfully updated product in Supabase:', data.product);
       return data as DatabaseProduct;
 
     } catch (error) {
@@ -251,7 +251,7 @@ class SupabaseService {
         return false;
       }
 
-      console.log('Successfully deleted product from Supabase');
+      if (__DEV__) console.log('Successfully deleted product from Supabase');
       return true;
 
     } catch (error) {
@@ -267,12 +267,16 @@ class SupabaseService {
         throw new Error('Supabase client not initialized');
       }
 
-      // Note: For JSONB array search, we use the contains operator
-      // The search will match products where the product name or store contains the search term
+      // Sanitize search term to prevent filter injection
+      const sanitized = searchTerm.replace(/[%_\\,().]/g, '');
+      if (!sanitized.trim()) {
+        return [];
+      }
+
       let query = this.supabase
         .from('products')
         .select('*')
-        .or(`product.ilike.%${searchTerm}%,store.ilike.%${searchTerm}%`);
+        .or(`product.ilike.%${sanitized}%,store.ilike.%${sanitized}%`);
 
       // Apply additional filters
       if (options.filters) {
@@ -456,8 +460,8 @@ class SupabaseService {
         throw new Error('Supabase client not initialized');
       }
 
-      console.log('Uploading product image for ID:', productId);
-      console.log('Image URI:', imageUri);
+      if (__DEV__) console.log('Uploading product image for ID:', productId);
+      if (__DEV__) console.log('Image URI:', imageUri);
 
       // Validate image URI
       if (!imageUri || typeof imageUri !== 'string') {
@@ -468,14 +472,14 @@ class SupabaseService {
       // For React Native/Expo, always use FileSystem to read the image
       // This is more reliable than fetch() for local file URIs
       try {
-        console.log('Reading image with Expo FileSystem...');
+        if (__DEV__) console.log('Reading image with Expo FileSystem...');
 
         // Read the image as base64
         const base64 = await FileSystem.readAsStringAsync(imageUri, {
           encoding: 'base64',
         });
 
-        console.log('Base64 data length:', base64.length);
+        if (__DEV__) console.log('Base64 data length:', base64.length);
 
         if (!base64 || base64.length === 0) {
           console.error('Failed to read image as base64');
@@ -516,7 +520,7 @@ class SupabaseService {
         let uint8Array: Uint8Array;
         try {
           uint8Array = decodeBase64(base64);
-          console.log('Decoded array size:', uint8Array.length);
+          if (__DEV__) console.log('Decoded array size:', uint8Array.length);
         } catch (decodeError) {
           console.error('Failed to decode base64:', decodeError);
           return null;
@@ -524,7 +528,7 @@ class SupabaseService {
 
         // Create a blob from the Uint8Array
         const blob = new Blob([uint8Array.buffer as ArrayBuffer], { type: 'image/jpeg' });
-        console.log('Created blob size:', blob.size, 'bytes');
+        if (__DEV__) console.log('Created blob size:', blob.size, 'bytes');
 
         if (blob.size === 0) {
           console.error('Blob is empty after conversion');
@@ -535,7 +539,7 @@ class SupabaseService {
         const fileName = `${productId}.jpg`;
         const filePath = fileName;
 
-        console.log('Uploading blob to Supabase...');
+        if (__DEV__) console.log('Uploading blob to Supabase...');
         const { data, error } = await this.supabase.storage
           .from('product-images')
           .upload(filePath, blob, {
@@ -547,7 +551,7 @@ class SupabaseService {
           console.error('Error uploading image to Supabase storage:', error);
 
           // Try alternative: upload base64 directly using decode function
-          console.log('Trying alternative upload method...');
+          if (__DEV__) console.log('Trying alternative upload method...');
           const { data: altData, error: altError } = await this.supabase.storage
             .from('product-images')
             .upload(filePath, new Blob([uint8Array.buffer as ArrayBuffer], { type: 'image/jpeg' }), {
@@ -560,11 +564,11 @@ class SupabaseService {
             return null;
           }
 
-          console.log('Successfully uploaded via alternative method:', altData.path);
+          if (__DEV__) console.log('Successfully uploaded via alternative method:', altData.path);
           return altData.path;
         }
 
-        console.log('Successfully uploaded image:', data.path);
+        if (__DEV__) console.log('Successfully uploaded image:', data.path);
         return data.path;
 
       } catch (error) {
@@ -611,7 +615,7 @@ class SupabaseService {
         return false;
       }
 
-      console.log('Successfully deleted image:', imagePath);
+      if (__DEV__) console.log('Successfully deleted image:', imagePath);
       return true;
 
     } catch (error) {
